@@ -1,0 +1,26 @@
+rs-design
+Copyright 2026 The rs-design authors
+
+This product is a derivative work of Open Design
+(https://github.com/nexu-io/open-design), licensed under the Apache License,
+Version 2.0 (the "License"). You may obtain a copy of the License in the LICENSE
+file distributed with this product.
+
+Portions of this product reuse content and code from Open Design, including (but
+not limited to):
+  - Skills (SKILL.md folders)
+  - Design Systems (DESIGN.md)
+  - prompt templates, device frames, and design templates
+  - the local Node daemon, embedded as a sidecar in V1
+
+The upstream source is vendored as a git submodule at `vendor/open-design`,
+pinned to a specific commit recorded in `docs/ARCHITECTURE.md`.
+
+Some bundled Skills carry their OWN preserved licenses and attribution (for
+example, `guizang-ppt`). Those per-folder LICENSE / attribution files are
+retained verbatim and MUST NOT be stripped when the content is vendored,
+copied, or bundled. See `docs/PACKAGING.md` and the licensing guardrails in
+`.claude/CLAUDE.md`.
+
+This project is not affiliated with or endorsed by the upstream authors. Product
+and company names referenced herein may be trademarks of their respective owners.

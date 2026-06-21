@@ -1,0 +1,71 @@
+# rs-design — Cargo workspace root.
+#
+# The FULL V2 crate set is declared here at CP0 so V2 migration adds bodies,
+# never structure. In V1, od-server proxies 100% to the embedded Node daemon and
+# most crates are stubs; by the end of V2, od-server *is* the daemon and the
+# sidecar is deleted. See TODO.md and docs/V2-MIGRATION.md.
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/od-contract",
+    "crates/od-server",
+    "crates/od-catalog",
+    "crates/od-store",
+    "crates/od-proxy",
+    "crates/od-artifacts",
+    "crates/od-agents",
+    "crates/od-prompt",
+]
+# The upstream monorepo (JS) is a git submodule; keep cargo out of it.
+exclude = ["vendor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.96"
+
+# Centrally-pinned dependency versions (the "consistent V2 versions" hook).
+# Crates opt in per-feature via `<dep> = { workspace = true }` as they are
+# implemented — unused entries here are harmless. Versions are provisional until
+# first used by a real implementation (CP2/CP4+).
+[workspace.dependencies]
+# async runtime + HTTP server (od-server — CP2)
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
+# HTTP client: reverse-proxy (CP2) + BYOK (od-proxy — V2 step 3). rustls avoids a
+# system OpenSSL dependency for the client path.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+# storage — same .od/app.sqlite schema as upstream (od-store — V2 step 2)
+rusqlite = { version = "0.32", features = ["bundled"] }
+# serialization + catalog frontmatter parsing (od-catalog — CP4; od-contract)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"        # NOTE: archived upstream; may swap for a maintained fork at CP4
+walkdir = "2"
+gray_matter = "0.2"
+# SSRF address-range checks (od-proxy — V2 step 3)
+ipnet = "2"
+# archives / export (od-artifacts — V2 steps 4 & 7)
+zip = "2"
+# errors + structured logging (all crates)
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# internal crates (path deps; wired as each is implemented)
+od-contract = { path = "crates/od-contract" }
+od-server = { path = "crates/od-server" }
+od-catalog = { path = "crates/od-catalog" }
+od-store = { path = "crates/od-store" }
+od-proxy = { path = "crates/od-proxy" }
+od-artifacts = { path = "crates/od-artifacts" }
+od-agents = { path = "crates/od-agents" }
+od-prompt = { path = "crates/od-prompt" }
+
+[profile.release]
+strip = true

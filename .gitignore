@@ -1,0 +1,32 @@
+# --- Rust ---
+/target/
+**/*.rs.bk
+
+# --- Tauri ---
+/src-tauri/target/
+/src-tauri/gen/
+
+# --- Node / frontend build output (also covered by submodule's own .gitignore) ---
+node_modules/
+.next/
+out/
+dist/
+.pnpm-store/
+
+# --- Packaging / staging artifacts ---
+/bundle/
+*.deb
+*.AppImage
+*.rpm
+
+# --- Local app data / runtime ---
+.od/
+.claude/
+.agents/
+.tmp/
+
+
+# --- OS / editor noise ---
+.DS_Store
+*.swp
+*~

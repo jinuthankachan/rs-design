@@ -1,0 +1,6 @@
+# Reuse the already-installed `stable` toolchain (currently 1.96.0) so local
+# builds don't require downloading a version-pinned toolchain on a flaky network.
+# CI (CP7) re-pins to an exact version + adds rustfmt/clippy components for
+# reproducible builds.
+[toolchain]
+channel = "stable"
