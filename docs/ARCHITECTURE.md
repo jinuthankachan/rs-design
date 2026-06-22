@@ -52,6 +52,11 @@ Why this shape (vs. webview→daemon directly):
 ## Verified upstream facts _(working assumptions; confirm at CP1)_
 
 - Frontend **static-exports** by default (`apps/web/next.config.ts` → `output: 'export'`).
+  **Verified in the real engine (CP1, [static-export.md](./spikes/static-export.md)):** renders,
+  hydrates, and client-routes in WebKitGTK 2.52.3. It is a **pure client SPA** (only `/`, `/404`,
+  `/_not-found`, `/desktop-pet` exist as HTML) with **origin-relative `/api/*`** calls — so axum
+  must provide **SPA fallback → `index.html`** for deep links and preserve SSE on `/api`. Static
+  chosen over `standalone`; no second Next sidecar.
 - Daemon bundles via **esbuild** (`apps/packaged/esbuild.config.mjs`), not `pkg`.
 - **Two** native addons: `better-sqlite3` and `node-pty`.
 - Daemon env: `OD_PORT` / `OD_BIND_HOST` / `OD_DATA_DIR`; readiness on stdout `[od] listening on <url>`

@@ -42,7 +42,7 @@ prereq below, not a dep issue). Submodule working tree is materialized and clean
 
 ## CP1 — De-risking spikes (open questions → facts)
 Exit: one `docs/spikes/*` note per question; packaging shape decided.
-- [ ] **(spike)** Static export reality: build `out/`, load in real WebKitGTK, verify routing/hydration → static vs `standalone`
+- [x] **(spike)** Static export reality: build `out/`, load in real WebKitGTK, verify routing/hydration → static vs `standalone`. **Verdict: static** (no second sidecar). All checks pass in WebKitGTK 2.52.3 (`webkit2gtk-4.1`, Tauri's engine): render + hydration (`reactFiber`, no mismatch) + client routing + deep-link hard-load. App is a pure client SPA (only 4 HTML routes on disk) with origin-relative `/api/*`. → imposes **R1 SPA-fallback, R2 origin-root serving, R3 SSE passthrough** on CP2 axum. See [docs/spikes/static-export.md](./docs/spikes/static-export.md).
 - [ ] **(spike)** Frontend API-base wiring (relative `/api` vs build-time var) — dictates CP2/CP3 wiring
 - [ ] **(spike)** Daemon packaging: upstream esbuild → bundle + pruned deps + Node 24, run under PATH-stripped env; record size
 - [ ] **(spike)** Native addon load: `better-sqlite3` + `node-pty` under bundled Node; RPATH/glibc on Ubuntu 24.04

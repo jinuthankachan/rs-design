@@ -24,7 +24,7 @@ dist/
 .claude/
 .agents/
 .tmp/
-
+.claudeignore
 
 # --- OS / editor noise ---
 .DS_Store
