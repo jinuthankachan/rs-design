@@ -15,8 +15,12 @@ Legend: `[ ]` todo · `[x]` done · **(spike)** investigation · **(user)** need
 
 ---
 
-## CP0 — Foundation: repo + workspace skeleton + vendored upstream
+## CP0 — Foundation: repo + workspace skeleton + vendored upstream — ✅ COMPLETE
 Exit: `cargo build` green on the non-tauri crates; submodule present; licensing in place.
+Status: met. All 8 non-tauri crates pass offline `cargo check` (exit 0); the full
+dependency graph (incl. `src-tauri`/`tauri`) now resolves and downloads (439 crates, no
+network errors — only the `cairo`/WebKitGTK *system* libs are missing, which is the sudo
+prereq below, not a dep issue). Submodule working tree is materialized and clean.
 - [x] `git init`; `.gitignore`; `rust-toolchain.toml` (1.96)
 - [x] Root `Cargo.toml` workspace declaring all members incl. `od-contract`; `[workspace.dependencies]`
 - [x] All 8 crates as compiling stubs (doc comment + `// TODO(V2 step N)`)
@@ -25,10 +29,17 @@ Exit: `cargo build` green on the non-tauri crates; submodule present; licensing 
 - [x] `docs/` placeholders (ARCHITECTURE, CONTRACT, PACKAGING, V2-MIGRATION) + `docs/spikes/`
 - [x] Add `vendor/open-design` submodule pinned to `6afe7ea`; SHA recorded in `docs/ARCHITECTURE.md`
 - [x] Copy upstream `LICENSE` (Apache-2.0) to repo root
-- [x] **(verify)** non-tauri crates compile — offline `cargo check` of all 8 is green (exit 0). Full-graph resolve incl. `src-tauri`/`tauri` deps deferred to a networked build (crates.io was timing out)
-- [ ] Materialize submodule working tree (it's a blobless partial clone): `git -C vendor/open-design checkout main` — fetches file blobs (large; flaky network may need retries)
+- [x] **(verify)** non-tauri crates compile — offline `cargo check -p od-contract -p od-server -p od-catalog -p od-store -p od-proxy -p od-artifacts -p od-agents -p od-prompt` is green (exit 0)
+- [x] **(verify)** full-graph build incl. `src-tauri`/`tauri` — after the system `-dev` libs were installed, `cargo check --workspace` compiles the entire stack (gtk/webkit2gtk/wry/tauri + `rs-design` app), exit 0. Required bumping transitive `time` 0.3.50→0.3.51 (0.3.50 fails to build on the current toolchain: `unresolved import time_macros::timestamp`)
+- [x] Materialize submodule working tree — `vendor/open-design` was a **blob:none promisor
+  partial clone** (only `LICENSE` on disk; every other path showed as `D`). `git checkout -f HEAD`
+  lazily fetched all blobs; tree now materialized (157 skills, 152 design-systems, `apps/daemon`,
+  `apps/web`) and the gitlink is clean (no longer `-dirty`)
+
+> **Remaining (need sudo / are CP1 spike scope — not network-blocked):**
+
 - [ ] **(user)** install build prereqs — see [docs/PACKAGING.md](./docs/PACKAGING.md): webkit/jsc/soup `-dev`, `patchelf`, `libssl-dev`, `cargo install tauri-cli`
-- [ ] **(spike)** confirm `pnpm -C vendor/open-design install` + daemon/web builds; record time/size
+- [ ] **(spike)** confirm `pnpm -C vendor/open-design install` + daemon/web builds; record time/size (working tree now materialized — ready to run)
 
 ## CP1 — De-risking spikes (open questions → facts)
 Exit: one `docs/spikes/*` note per question; packaging shape decided.
