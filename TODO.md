@@ -36,10 +36,9 @@ prereq below, not a dep issue). Submodule working tree is materialized and clean
   lazily fetched all blobs; tree now materialized (157 skills, 152 design-systems, `apps/daemon`,
   `apps/web`) and the gitlink is clean (no longer `-dirty`)
 
-> **Remaining (need sudo / are CP1 spike scope — not network-blocked):**
+- [x] **(user)** install build prereqs — see [docs/PACKAGING.md](./docs/PACKAGING.md): `libwebkit2gtk-4.1-dev`, `libjavascriptcoregtk-4.1-dev`, `libsoup-3.0-dev`, `patchelf`, `libssl-dev` all installed; `cargo install tauri-cli` → `tauri-cli 2.11.3`. (`librsvg2-dev`/`rsvg2` still missing — needed only for CP6 icon/SVG bundling, not for build/dev.)
 
-- [ ] **(user)** install build prereqs — see [docs/PACKAGING.md](./docs/PACKAGING.md): webkit/jsc/soup `-dev`, `patchelf`, `libssl-dev`, `cargo install tauri-cli`
-- [ ] **(spike)** confirm `pnpm -C vendor/open-design install` + daemon/web builds; record time/size (working tree now materialized — ready to run)
+- [x] **(spike)** confirm `pnpm -C vendor/open-design install` + daemon/web builds; record time/size — all green; see [docs/spikes/upstream-build.md](./docs/spikes/upstream-build.md). install 1.4G/~1m52s, daemon `tsc` 12M/10.5s, web `next build` static-exports `out/` 51M/52.2s (confirms Open Q#1 default). `node-pty` build script ignored by pnpm default (CP6 must approve/prebuild).
 
 ## CP1 — De-risking spikes (open questions → facts)
 Exit: one `docs/spikes/*` note per question; packaging shape decided.
