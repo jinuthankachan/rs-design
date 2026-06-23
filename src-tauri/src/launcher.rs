@@ -33,6 +33,14 @@ pub trait DaemonLauncher: Send + Sync + 'static {
 
     /// Human-readable one-liner for logs (e.g. the resolved node + entry paths).
     fn describe(&self) -> String;
+
+    /// Root of the content tree this launcher serves (`skills/`,
+    /// `design-systems/`, `design-templates/`, the web `out/`). The supervisor
+    /// uses it to build the CP4 native catalog roots. For [`DevNodeLauncher`]
+    /// this is the vendored submodule; CP6's `BundledLauncher` will return the
+    /// packaged resource root, so the native routes read the same content the
+    /// daemon does.
+    fn content_root(&self) -> PathBuf;
 }
 
 /// Dev-loop launcher: system Node + the `tsc`-built daemon entry living in the
@@ -115,6 +123,10 @@ impl DaemonLauncher for DevNodeLauncher {
             self.node_bin.display(),
             self.cli_js.display()
         )
+    }
+
+    fn content_root(&self) -> PathBuf {
+        self.content_root.clone()
     }
 }
 
