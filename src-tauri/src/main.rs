@@ -15,7 +15,9 @@ mod env_inject;
 mod launcher;
 mod supervisor;
 
-use supervisor::Supervisor;
+use std::time::Duration;
+
+use supervisor::{DaemonStatus, Supervisor};
 use tauri::Manager;
 
 fn main() {
@@ -27,9 +29,25 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            // Start axum on an ephemeral loopback port (reserves the daemon port).
+            // Start axum + spawn and health-check the embedded daemon.
             let supervisor = supervisor::start()?;
             let axum_url = supervisor.axum_url.clone();
+
+            // Gate the window on a reachable backend, but never block the dev
+            // loop forever: on failure we still open the window (devtools/logs
+            // stay available; the proxy will surface 502s) after surfacing the
+            // error.
+            match tauri::async_runtime::block_on(supervisor.wait_ready(Duration::from_secs(30))) {
+                DaemonStatus::Ready => {
+                    tracing::info!("embedded daemon ready; catalog reachable via axum")
+                }
+                DaemonStatus::Failed(err) => tracing::error!(
+                    error = %err,
+                    "embedded daemon failed to become ready; opening window anyway"
+                ),
+                DaemonStatus::Starting => {}
+            }
+
             tracing::info!(url = %axum_url, "pointing webview at od-server");
 
             // Build the main window on the axum origin (same-origin API/SSE).

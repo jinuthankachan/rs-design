@@ -23,3 +23,5 @@ tracing-subscriber = { workspace = true }
 od-server = { workspace = true }
 # `axum::serve` drives the supervisor's listener; route table comes from od-server.
 axum = { workspace = true }
+# Daemon health-check: poll `GET /api/skills` on the loopback daemon (CP3).
+reqwest = { workspace = true }
