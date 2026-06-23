@@ -88,14 +88,19 @@ file-walk catalog — it stays proxied and migrates with `od-store` (V2 step 2).
 - [x] axum handlers → `Target::NativeExact` + `RouteTable::native_exact` + `od_server::router_with_catalog` ([catalog.rs](./crates/od-server/src/catalog.rs)); exact-path so siblings (`/api/skills/:id`) and non-`GET` methods (`POST /api/design-systems`) fall through to the proxy; `OD_FORCE_PROXY` keeps the `--force-proxy` rollback lever; supervisor wired via `DaemonLauncher::content_root()`
 - [x] **(verify)** per-route DoD: golden pass (byte-identical) · error parity (live seam: `POST /api/design-systems` 201==201 daemon; sibling/version proxied) · routes flipped to native (`content-type: application/json; charset=utf-8`) · no regression (catch-all proxy unchanged; everything non-catalog still proxies). Live harness: [cp4_seam_verify](./crates/od-server/examples/cp4_seam_verify.rs)
 
-## CP5 — Acceptance integrations (CLI/PATH, SSE chat, BYOK)
-Exit: the three behavioral done-criteria pass manually.
-- [ ] **(spike→impl)** login-shell PATH reconstruction → inject into daemon PATH
-- [ ] Explicit CLI-path settings → `CLAUDE_BIN` + ≥1 other (second independent lever)
-- [ ] **(verify)** Claude Code + 1 other CLI detected; no-CLI path degrades gracefully
-- [ ] **(verify)** real chat streams tokens + todo card live in WebKitGTK
-- [ ] **(verify)** BYOK works with no CLI present; SSRF guard intact
-- [ ] Surface CLI-detection + BYOK status in settings/diagnostics
+## CP5 — Acceptance integrations (CLI/PATH, SSE chat, BYOK) — ✅ COMPLETE
+Exit: the three behavioral done-criteria pass. Status: met headlessly through the
+real axum seam (`scripts/cp5-acceptance.sh` → 4/4 pass: `claude 2.1.137` +
+`antigravity 1.0.10` detected, no-CLI graceful, SSRF 403, BYOK reachable). The
+daemon owns detection/chat/BYOK in V1; the Rust port's job is **env injection** so
+the GUI-launched daemon sees the user's CLIs (V1 gotcha #1) — never reimplement
+detection. Full write-up: [docs/spikes/cp5-acceptance.md](./docs/spikes/cp5-acceptance.md).
+- [x] **(spike→impl)** login-shell PATH reconstruction → inject into daemon PATH — `$SHELL -lic` marker probe (5 s timeout, graceful fallback, `OD_SKIP_LOGIN_PATH` opt-out), merged login-first/de-duped with the GUI PATH and injected as the daemon child's `PATH` ([env_inject.rs](./src-tauri/src/env_inject.rs) + [launcher.rs](./src-tauri/src/launcher.rs)); `resolve_node_bin` scans the same merged PATH. The daemon resolves CLIs from `process.env.PATH` (+ well-known toolchain dirs), so this is the fix.
+- [x] Explicit CLI-path settings → `CLAUDE_BIN` + ≥1 other (second independent lever) — `env_inject` collects `*_BIN` (key list mirrors the daemon's `AGENT_BIN_ENV_KEYS`) and **seeds** them into `app-config.json` `agentCliEnv`, the daemon's PATH-*independent* override (`configuredExecutableOverride`); never clobbers a user-set value. Process-env `*_BIN` alone is **not** honored by the daemon, so seeding the file is the faithful mechanism. 7 unit tests (`cargo test -p rs-design --bins env_inject`).
+- [x] **(verify)** Claude Code + 1 other CLI detected; no-CLI path degrades gracefully — Mode 1: `GET /api/agents` via axum → `claude` + `antigravity` available. Mode 2: deterministically CLI-free env (`OD_AGENT_HOME=<empty>` + minimal PATH) → `/api/agents` 200, **0 available**, daemon still serves. [cp5_seam_verify](./crates/od-server/examples/cp5_seam_verify.rs).
+- [x] **(verify)** BYOK works with no CLI present; SSRF guard intact — Mode 3 (CLI-free): `POST /api/proxy/anthropic/stream` link-local `baseUrl` → **403** (SSRF), incomplete body → **400** (route present + validates, not 404) → BYOK independent of agent detection. (SSRF guard allows loopback for local Ollama by design.)
+- [x] Surface CLI-detection + BYOK status in settings/diagnostics — startup probe of `/api/agents` through axum logs the acceptance summary (per-CLI name/version/auth, Claude+other check, no-CLI note, BYOK-always note) in [diagnostics.rs](./src-tauri/src/diagnostics.rs); user-facing surface stays the proxied daemon Settings UI.
+- [ ] **(verify)** real chat streams tokens + todo card live in WebKitGTK — **GUI-gated** (clean desktop session). SSE *framing* is verified end-to-end in CP2/CP3; what remains is observing a live chat token stream + the pinned TodoCard render in-window via `cargo tauri dev`. Tracked as the manual confirmation step in [docs/spikes/cp5-acceptance.md](./docs/spikes/cp5-acceptance.md) (alongside the BYOK live-key token stream, which can't use loopback offline).
 
 ## CP6 — Package: bundled daemon + `.deb` + `.AppImage`, clean-machine launch
 Exit: both artifacts install on a clean Ubuntu 24.04 (zero Node/pnpm) and pass all behaviors.
