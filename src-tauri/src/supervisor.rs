@@ -113,8 +113,17 @@ pub fn start() -> io::Result<Supervisor> {
     let axum_port = std_listener.local_addr()?.port();
     let axum_url = format!("http://{}:{}", Ipv4Addr::LOCALHOST, axum_port);
 
-    // V1 route table: everything proxies to the daemon (every prefix `Proxy`).
-    let router = od_server::router(daemon_url.clone());
+    // CP4 route table: the three `od-catalog` reads are served natively from the
+    // same content the daemon reads (launcher's content root + data dir);
+    // everything else — and every non-GET method on those paths — proxies to the
+    // daemon. `OD_FORCE_PROXY` is the contract's rollback lever: set it to revert
+    // the catalog routes to the daemon without changing anything else.
+    let catalog_roots = od_catalog::CatalogRoots::new(launcher.content_root(), &data_dir);
+    let force_proxy = force_proxy_requested();
+    if force_proxy {
+        tracing::warn!("OD_FORCE_PROXY set: native catalog routes disabled, proxying to daemon");
+    }
+    let router = od_server::router_with_catalog(daemon_url.clone(), catalog_roots, force_proxy);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let (ready_tx, ready_rx) = watch::channel(DaemonStatus::Starting);
@@ -375,6 +384,19 @@ fn ensure_first_run_config(data_dir: &Path) -> io::Result<()> {
     std::fs::write(&config_path, body)?;
     tracing::info!(path = %config_path.display(), "wrote first-run config (telemetry disabled)");
     Ok(())
+}
+
+/// Whether the `--force-proxy` rollback lever is engaged, read from the
+/// `OD_FORCE_PROXY` env var (`1`/`true`, case-insensitive). The app is a GUI
+/// process with no CLI surface, so the contract's `--force-proxy` is exposed as
+/// an env toggle here.
+fn force_proxy_requested() -> bool {
+    std::env::var("OD_FORCE_PROXY")
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            v == "1" || v == "true"
+        })
+        .unwrap_or(false)
 }
 
 /// Bind an ephemeral loopback port, read its number, and release it so the

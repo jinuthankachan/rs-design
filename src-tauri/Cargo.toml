@@ -21,6 +21,9 @@ tracing-subscriber = { workspace = true }
 # The webview-facing axum server (route table + SSE-safe proxy). The supervisor
 # runs it on an ephemeral loopback port and points the webview at it (CP2).
 od-server = { workspace = true }
+# CP4 native catalog roots (skills/design-systems/design-templates) built from
+# the launcher's content root + data dir, passed into od-server's route table.
+od-catalog = { workspace = true }
 # `axum::serve` drives the supervisor's listener; route table comes from od-server.
 axum = { workspace = true }
 # Daemon health-check: poll `GET /api/skills` on the loopback daemon (CP3).
