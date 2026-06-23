@@ -55,14 +55,26 @@ explicit env (`OD_PORT`, `OD_BIND_HOST`, `OD_DATA_DIR`, `OD_RESOURCE_ROOT` **+ `
 — the latter is required for `OD_RESOURCE_ROOT`'s safe-base check — plus PATH/`*_BIN` at CP5).
 **Verified at CP1:** this boots and serves `/api/skills` under a fully PATH-stripped env.
 
-## Native modules (the main reason V1 isn't single-file)
+## Native modules (the main reason V1 isn't single-file) — verified at CP1-Task4
 
-Two `.node` addons. **`better-sqlite3`** is built and **loads clean under the bundled Node**
-(standard libs only, GLIBC_2.28 floor — fine on Ubuntu 24.04's 2.39). **`node-pty` has no Linux
-binary by default** — pnpm skips its build script, so CP6 must `pnpm approve-builds` / compile it
-for linux-x64 to enable the terminal, or ship without it (the daemon boots fine regardless, and
-`/api/terminal` is out of V1 smoke scope). Full RPATH/glibc rigor under the bundled (not dev) Node
-is CP1-Task4.
+Two `.node` addons; **both load AND run under the bundled, stripped Node 24** in a fully
+PATH-stripped env ([native-addons.md](./spikes/native-addons.md)). **Neither carries an
+RPATH/RUNPATH → no `patchelf`/relocation for the addons** (the `patchelf` prereq above is for
+Tauri/AppImage's WebKit bundling, not these `.node` files). ABI `NODE_MODULE_VERSION` **137** — any
+Node 24.x loads them, so pin *a* Node 24.x.
+
+| addon | status | glibc / GLIBCXX floor | notes |
+|---|---|---|---|
+| `better-sqlite3` | ✅ real SQL, SQLite 3.53.1 | 2.29 / 3.4.20 | **SQLite statically linked** (no `libsqlite3` dep); keep prebuilt `.node` as-is |
+| `node-pty` | ✅ real PTY (after compile) | 2.34 / 3.4.22 | **no Linux prebuild ships + pnpm skips its build script** |
+
+Ubuntu 24.04 provides glibc **2.39** / GLIBCXX **3.4.33**, clearing both. The bundle's glibc floor
+is **2.34**, set by the host that compiles node-pty (→ Ubuntu 22.04+); building on the 24.04 runner
+is fine for the V1 target. **CP6 must compile node-pty for linux-x64** (`pnpm approve-builds` then
+`node-gyp rebuild` → 75 K `pty.node`, ~1 s) to enable the terminal — or ship without it (the daemon
+boots regardless; `/api/terminal` is out of V1 smoke scope). Add a **verify-after-bundle load-test**
+(`require()` both addons under the bundled node, one op each) to CP6/CP7 to catch ABI/glibc/missing
+-binary regressions.
 
 ## Licensing guardrail
 When vendoring/bundling content, **copy per-folder `LICENSE`/attribution files too** and keep
