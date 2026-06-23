@@ -11,6 +11,7 @@
 //! origin must *be* axum for those calls to reach the route table. axum serves
 //! the app and proxies `/api` from one origin; SSE flows straight through.
 
+mod diagnostics;
 mod env_inject;
 mod launcher;
 mod supervisor;
@@ -39,7 +40,15 @@ fn main() {
             // error.
             match tauri::async_runtime::block_on(supervisor.wait_ready(Duration::from_secs(30))) {
                 DaemonStatus::Ready => {
-                    tracing::info!("embedded daemon ready; catalog reachable via axum")
+                    tracing::info!("embedded daemon ready; catalog reachable via axum");
+                    // CP5 acceptance diagnostics: probe /api/agents through the
+                    // seam and log which CLIs the env_inject levers surfaced.
+                    // Off the critical path (detection spawns per-CLI probes), so
+                    // spawn it rather than block the window.
+                    let diag_url = axum_url.clone();
+                    tauri::async_runtime::spawn(async move {
+                        diagnostics::log_acceptance_summary(&diag_url).await;
+                    });
                 }
                 DaemonStatus::Failed(err) => tracing::error!(
                     error = %err,
