@@ -29,6 +29,13 @@ until it's proven in the running app.
 6. **Prompt stack** — `od-prompt`: port `apps/daemon/src/prompts/*` assembly. Coupled to step 5.
 7. **Export** — `od-artifacts`: ZIP (`zip`) + Markdown trivial; PDF via webview print; PPTX is
    agent-written.
+8. **Static frontend + static mounts** — the Node daemon serves `apps/web/out` (the SPA),
+   `/artifacts`, and `/frames` via `express.static` (`server.ts:4996/5936/5967`). In V1 the
+   catch-all proxy delivers these by passthrough; **before the sidecar can be deleted**,
+   `od-server` must serve them natively (`tower-http` `ServeDir` from the bundled `out/` +
+   content dirs) **and** keep the **R1 SPA-fallback → `index.html`** that V1 adds in axum (CP3).
+   Honor `trailingSlash: true`. This is the last thing the daemon does that isn't an `/api`
+   route, so it flips alongside or just before the sidecar deletion.
 
 ## Why the V1 gotchas disappear in V2
 - Rust spawns the CLIs directly with explicit env (PATH/`*_BIN` centralized in V1 CP5) → the

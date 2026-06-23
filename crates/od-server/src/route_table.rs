@@ -25,6 +25,7 @@
 //! route passes its golden tests.
 
 use axum::{extract::Request, routing::any, routing::MethodRouter, Router};
+use tower_http::trace::TraceLayer;
 
 use crate::proxy::{self, ProxyState};
 
@@ -137,7 +138,10 @@ impl RouteTable {
         if let Some(upstream) = catch_all {
             app = app.fallback_service(proxy_method_router(upstream));
         }
-        app
+
+        // Per-request route-resolution logging (method/path/status/latency).
+        // `TraceLayer` wraps but never buffers the body, so SSE stays unbuffered.
+        app.layer(TraceLayer::new_for_http())
     }
 }
 
