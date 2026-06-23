@@ -125,6 +125,46 @@ Exit: green CI producing installable `.deb` + `.AppImage`, gated by golden tests
 
 ---
 
+## Manual / GUI-gated verification backlog
+
+Cross-cutting checks that **can't be verified headlessly** in this dev
+environment (need a real display / clean desktop session — the VS Code snap shell
+crashes GTK on `GLIBC_PRIVATE` per the CP1 spikes — or a live secret / clean
+machine). The underlying HTTP/SSE behaviors each depends on are already verified
+headlessly in the cited checkpoint; what remains is the **in-engine / live
+observation**. Collected here so they don't stay buried in checkpoint prose.
+
+Run all GUI items together once on a clean desktop session via `cargo tauri dev`.
+
+- [ ] **(CP3, GUI)** Full in-window launch: `cargo tauri dev` → daemon up →
+  health-check passes → UI lists real skills/design-systems; deep-link
+  hard-reload (R1 SPA fallback) resolves in-window; live `EventSource` shows
+  **incremental** delivery (first frame before the upstream gap). HTTP seam
+  (catalog, R1, R2, SSE framing) verified headlessly in CP3 — see
+  [docs/spikes/cp3-embed.md](./docs/spikes/cp3-embed.md).
+- [ ] **(CP5, GUI)** Real chat **streams tokens + the pinned TodoCard renders
+  live** in WebKitGTK (done-criterion (d)). Needs an agent CLI installed or a
+  BYOK key. SSE framing + CLI detection + BYOK/SSRF all verified headlessly —
+  see [docs/spikes/cp5-acceptance.md](./docs/spikes/cp5-acceptance.md).
+- [ ] **(CP5, live key)** BYOK **happy-path token stream** against a real public
+  provider (a live API key is required; the SSRF guard allows loopback for local
+  Ollama, but a public endpoint can't be reached offline). Route presence, SSRF
+  block, and CLI-independence are verified headlessly; only the live upstream
+  round-trip is manual.
+- [ ] **(CP6/CP1, GUI offline — KI-1)** Showcase artifacts that pull **Google
+  Fonts / Three.js / Tailwind from the network** render degraded **offline**
+  (system-font drift, broken WebGL/CDN). Decide + verify the bundling/offline
+  strategy at CP6 — see [docs/spikes/webkitgtk-render.md](./docs/spikes/webkitgtk-render.md).
+- [ ] **(CP6/CP1, GUI — KI-4)** Ensure **GStreamer plugins** are present so
+  `<video>` artifacts play in WebKitGTK; verify on the packaged app.
+- [ ] **(CP6, clean machine)** Clean Ubuntu 24.04, **zero Node/pnpm**: install
+  `.deb` + `.AppImage`, then run the whole acceptance set in-window (health-check,
+  native catalog, ≥5 skills render, SSE chat, BYOK) and confirm **no orphan
+  daemon** on exit. This is the umbrella manual acceptance (also the last box in
+  CP6).
+
+---
+
 ## V1 done-criteria → checkpoint
 | Done-criterion | Met at |
 |---|---|
