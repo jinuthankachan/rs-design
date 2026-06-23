@@ -85,6 +85,12 @@ Why this shape (vs. webview→daemon directly):
 - CLI discovery honors explicit `*_BIN` vars (`CLAUDE_BIN`, `CODEX_BIN`, …).
 - Telemetry is config-file driven (`app-config.json`) → ship disabled.
 - Prior art to port: `apps/desktop/src/main/runtime.ts` (Electron supervisor).
+- **Artifacts render faithfully in WebKitGTK** (CP1-Task5, [webkitgtk-render.md](./spikes/webkitgtk-render.md)):
+  6/6 showcase artifacts render correctly in WebKitGTK 2.52.3 (online); every modern CSS feature is
+  supported and WebGL2/canvas-2D work — the "modern CSS differs" caution is downgraded. The real
+  risk is **network, not engine**: offline, externally-linked Google Fonts (142 files) fall back to
+  system fonts and Three.js/Tailwind CDN scenes break (KI-1). CP6: keep webview network + ship
+  GStreamer plugins.
 
 ## See also
 - [CONTRACT.md](./CONTRACT.md) — the API seam (do not break during V2)
