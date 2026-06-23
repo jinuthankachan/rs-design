@@ -18,5 +18,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-# The axum supervisor server is wired in at CP2:
-# od-server = { workspace = true }
+# The webview-facing axum server (route table + SSE-safe proxy). The supervisor
+# runs it on an ephemeral loopback port and points the webview at it (CP2).
+od-server = { workspace = true }
+# `axum::serve` drives the supervisor's listener; route table comes from od-server.
+axum = { workspace = true }
