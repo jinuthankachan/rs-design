@@ -75,9 +75,11 @@ Why this shape (vs. webview→daemon directly):
   only agent-CLI spawn does (CP5). **Size:** ~71 M pruned daemon + ~101 M stripped Node ≈ **172 M**
   sidecar (content shipped separately). CP3 env gotcha: `OD_RESOURCE_ROOT` is safe-base-checked, so
   the supervisor must also set `OD_INSTALLATION_DIR` when pointing at external content.
-- **Two** native addons: `better-sqlite3` (loads clean under bundled Node; std libs, GLIBC_2.28)
-  and `node-pty` (**no Linux binary built by default** — CP6 must compile it or ship without the
-  terminal; full RPATH/glibc rigor at CP1-Task4).
+- **Two** native addons — **both verified to load + run under the bundled stripped Node on Ubuntu
+  24.04** (CP1-Task4, [native-addons.md](./spikes/native-addons.md)): `better-sqlite3` (real SQL,
+  static SQLite 3.53.1, glibc floor 2.29) and `node-pty` (real PTY **after compiling for
+  linux-x64** — no prebuild ships; glibc floor 2.34). **No RPATH on either → no `patchelf`.** ABI
+  137 (any Node 24.x). CP6 must compile node-pty (or skip the terminal).
 - Daemon env: `OD_PORT` / `OD_BIND_HOST` / `OD_DATA_DIR`; readiness on stdout `[od] listening on <url>`
   (no `/health` route); CORS via `OD_ALLOWED_ORIGINS`.
 - CLI discovery honors explicit `*_BIN` vars (`CLAUDE_BIN`, `CODEX_BIN`, …).
