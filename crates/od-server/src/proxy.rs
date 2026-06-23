@@ -1,12 +1,28 @@
-//! Catch-all reverse proxy to the Node sidecar (CP2-Task1).
+//! Catch-all reverse proxy to the Node sidecar (CP2-Task1 + Task2).
 //!
 //! Forwards every request that no `Native` route claims to the embedded Node
-//! daemon over loopback, byte-for-byte. The request/response bodies are
-//! **streamed** (never buffered) so this same handler carries SSE without
-//! change — see CP2-Task2 for the SSE-specific guarantees (no compression,
-//! framing preserved). Hop-by-hop headers are stripped in both directions per
-//! RFC 9110 §7.6.1, since they describe a single transport hop and must not be
-//! relayed across the proxy.
+//! daemon over loopback, byte-for-byte. Hop-by-hop headers are stripped in both
+//! directions per RFC 9110 §7.6.1, since they describe a single transport hop
+//! and must not be relayed across the proxy.
+//!
+//! ## SSE safety (CP2-Task2)
+//!
+//! The chat/proxy routes stream Server-Sent Events; a proxy that buffers or
+//! compresses them breaks live token streaming. This handler is SSE-safe by
+//! construction:
+//!
+//! - **No buffering.** Request and response bodies are passed as streams
+//!   (`reqwest::Body::wrap_stream` upstream, `axum::body::Body::from_stream`
+//!   downstream); each chunk is relayed as it arrives. `TCP_NODELAY` is set so
+//!   small `data:` frames are not held by Nagle's algorithm.
+//! - **No upstream compression.** `accept-encoding` is dropped from the
+//!   forwarded request, so the loopback daemon always replies with identity
+//!   encoding. Compression coalesces SSE frames (defeating real-time delivery)
+//!   and saves nothing over loopback; identity is both safer and cheaper.
+//! - **Framing preserved.** `content-type: text/event-stream`, `cache-control`,
+//!   and the event/data/id/retry bytes pass through untouched (only hop-by-hop
+//!   headers are filtered). od-server itself applies no response compression —
+//!   see the note on `router` in `lib.rs`.
 
 use axum::{
     body::Body,
@@ -35,6 +51,8 @@ impl ProxyState {
         let upstream = upstream.into().trim_end_matches('/').to_string();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            // Flush small SSE frames immediately instead of coalescing them.
+            .tcp_nodelay(true)
             .build()
             .expect("reqwest client with default rustls config should build");
         Self { client, upstream }
@@ -42,8 +60,9 @@ impl ProxyState {
 }
 
 /// Hop-by-hop headers (RFC 9110 §7.6.1) — connection-specific, never forwarded.
-/// `host` and `content-length` are stripped from the *request* additionally:
-/// `reqwest` derives both from the target URL and the re-streamed body.
+/// On the *request* we also drop `host`/`content-length` (`reqwest` re-derives
+/// both from the target URL and the re-streamed body) and `accept-encoding` (so
+/// the loopback daemon never compresses — see the SSE-safety note above).
 const HOP_BY_HOP: &[&str] = &[
     "connection",
     "keep-alive",
@@ -110,7 +129,10 @@ pub async fn proxy_handler(
         .unwrap_or("/");
     let url = format!("{}{}", state.upstream, path_and_query);
 
-    let req_headers = filter_headers(&parts.headers, &["host", "content-length"]);
+    let req_headers = filter_headers(
+        &parts.headers,
+        &["host", "content-length", "accept-encoding"],
+    );
 
     // Stream the request body upstream rather than buffering it.
     let upstream_body = reqwest::Body::wrap_stream(body.into_data_stream());

@@ -52,7 +52,7 @@ Exit: one `docs/spikes/*` note per question; packaging shape decided.
 ## CP2 — Stable seam: supervisor + axum catch-all proxy + route table
 Exit: webview loads through axum; SSE streams un-buffered; route table is a real `Proxy|Native` type.
 - [x] `od-server`: axum fallback `/*path` forwarding via `reqwest`; strip hop-by-hop headers — `ProxyState` (redirects disabled) + `proxy_handler` catch-all in [crates/od-server/src/proxy.rs](./crates/od-server/src/proxy.rs); request/response bodies streamed (unbuffered, SSE-ready), hop-by-hop headers + `Connection`-named tokens stripped both directions (`host`/`content-length` also dropped upstream so `reqwest` re-derives them); upstream failure → `502`. 5 integration tests in [crates/od-server/tests/proxy.rs](./crates/od-server/tests/proxy.rs) (method/path/query, body, both-direction stripping, 502); fmt+clippy clean.
-- [ ] **SSE-safe streaming proxy** (no buffering; preserve `text/event-stream`; no SSE compression) — highest-risk task
+- [x] **SSE-safe streaming proxy** (no buffering; preserve `text/event-stream`; no SSE compression) — highest-risk task. Request/response bodies streamed (Task1 foundation); `accept-encoding` dropped on the forwarded request so the loopback daemon never compresses (compression coalesces SSE frames); `tcp_nodelay(true)` flushes small `data:` frames; `content-type`/`cache-control`/framing pass through untouched. od-server applies **no** response compression — invariant + future-`CompressionLayer` warning recorded on `router` in [crates/od-server/src/lib.rs](./crates/od-server/src/lib.rs). 3 SSE tests in [crates/od-server/tests/sse.rs](./crates/od-server/tests/sse.rs): header preservation, **incremental delivery** (first frame arrives before upstream's 300ms gap → not buffered), `accept-encoding` stripped. NOTE: verified via reqwest stream client; real-`EventSource`-through-webview check is the separate CP2 spike task below.
 - [ ] Route-table type `(prefix, Proxy{upstream}|Native{service})`; V1 = `("/", Proxy)`; dispatcher
 - [ ] `src-tauri` supervisor: two ephemeral loopback ports (axum + daemon); point webview at axum
 - [ ] **(spike→impl)** SSE through the webview's real `EventSource` via axum (not just curl)
@@ -69,6 +69,7 @@ Exit: `cargo tauri dev` → daemon up + health-check → UI lists real skills/de
 - [ ] First-run: write default `app-config.json` with telemetry disabled
 - [ ] `DaemonLauncher` abstraction: `DevNodeLauncher` now, `BundledLauncher` slot for CP6
 - [ ] **(verify)** app launches, catalog populates through axum→daemon
+- [ ] **(verify)** SSE-safe proxy through the **real webview `EventSource`** (closes the CP2-Task2 / line-58 deferral, now that a live daemon SSE source exists behind axum): open an `EventSource` against a daemon SSE route in WebKitGTK, confirm frames arrive incrementally (not buffered), `text/event-stream` preserved, no compression. Full chat+todo-card SSE is CP5.
 
 ## CP4 — First native route + golden-test harness (V2 dress rehearsal)
 Exit: `od-catalog` routes served by Rust; golden tests byte-identical; `--force-proxy` retained.
