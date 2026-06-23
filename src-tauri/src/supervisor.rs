@@ -30,6 +30,7 @@ use tokio::process::{ChildStderr, ChildStdout};
 use tokio::sync::{oneshot, watch};
 use tokio::time::sleep;
 
+use crate::env_inject;
 use crate::launcher::{self, DaemonLauncher, DevNodeLauncher};
 
 /// Overall ceiling on becoming ready (listening line + first `/api/skills` 200).
@@ -100,7 +101,21 @@ impl Supervisor {
 pub fn start() -> io::Result<Supervisor> {
     let data_dir = launcher::dev_data_dir();
     ensure_first_run_config(&data_dir)?;
-    let launcher: Arc<dyn DaemonLauncher> = Arc::new(DevNodeLauncher::resolve()?);
+
+    // CP5 env injection (V1 gotcha #1): reconstruct the login-shell PATH so the
+    // GUI-launched daemon can find the user's agent CLIs, and seed any explicit
+    // `*_BIN` overrides into the daemon's app-config (second, PATH-independent
+    // lever). `seed_agent_cli_env` must run after `ensure_first_run_config` so it
+    // merges into the same file rather than racing it.
+    let injected = env_inject::resolve();
+    env_inject::seed_agent_cli_env(&data_dir, &injected.agent_cli_env)?;
+    tracing::info!(
+        login_path_recovered = injected.login_path_recovered,
+        bin_overrides = injected.agent_cli_env.len(),
+        "daemon env injected (PATH reconstruction + *_BIN overrides)"
+    );
+
+    let launcher: Arc<dyn DaemonLauncher> = Arc::new(DevNodeLauncher::resolve(injected.path)?);
     tracing::info!(launcher = %launcher.describe(), data_dir = %data_dir.display(), "daemon launcher resolved");
 
     // Reserve the daemon's port (the spawn below binds it for real).

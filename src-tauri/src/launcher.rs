@@ -14,6 +14,7 @@
 //! `OD_INSTALLATION_DIR`+`OD_RESOURCE_ROOT` for the content root (the latter is
 //! rejected unless it sits under the former — the spike's safe-base gotcha).
 
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -50,11 +51,16 @@ pub struct DevNodeLauncher {
     node_bin: PathBuf,
     cli_js: PathBuf,
     content_root: PathBuf,
+    /// PATH injected into the daemon child (CP5 env_inject: login-shell
+    /// reconstruction ∪ GUI PATH) so the daemon's PATH-scan finds the agent CLIs.
+    daemon_path: OsString,
 }
 
 impl DevNodeLauncher {
     /// Resolve the dev launch paths, or fail with an actionable error.
-    pub fn resolve() -> io::Result<Self> {
+    /// `daemon_path` is the CP5-injected PATH the daemon child runs with; it is
+    /// also what we scan for `node` so resolution and spawn stay symmetric.
+    pub fn resolve(daemon_path: OsString) -> io::Result<Self> {
         let content_root = dev_content_root();
         let cli_js = content_root.join("apps/daemon/dist/cli.js");
         if !cli_js.is_file() {
@@ -67,11 +73,12 @@ impl DevNodeLauncher {
                 ),
             ));
         }
-        let node_bin = resolve_node_bin()?;
+        let node_bin = resolve_node_bin(&daemon_path)?;
         Ok(Self {
             node_bin,
             cli_js,
             content_root,
+            daemon_path,
         })
     }
 }
@@ -91,16 +98,16 @@ impl DaemonLauncher for DevNodeLauncher {
             .arg("127.0.0.1");
 
         // Explicit child env (env-hygiene rule): clear everything, then set only
-        // what the daemon needs. CP5 replaces this dev PATH with login-shell
-        // reconstruction + explicit `*_BIN` so agent-CLI spawn works under GUI
-        // launch; the daemon *core* (HTTP/SSE/SQLite/catalog) needs no PATH.
+        // what the daemon needs. CP5: `daemon_path` is the env_inject-merged PATH
+        // (login-shell reconstruction ∪ GUI PATH) so the daemon's PATH-scan finds
+        // agent CLIs under GUI launch; explicit `*_BIN` overrides ride in via the
+        // seeded `agentCliEnv` (see env_inject::seed_agent_cli_env). The daemon
+        // *core* (HTTP/SSE/SQLite/catalog) needs no PATH.
         cmd.env_clear();
         if let Some(home) = std::env::var_os("HOME") {
             cmd.env("HOME", home);
         }
-        if let Some(path) = std::env::var_os("PATH") {
-            cmd.env("PATH", path);
-        }
+        cmd.env("PATH", &self.daemon_path);
         cmd.env("OD_PORT", &port_str);
         cmd.env("OD_BIND_HOST", "127.0.0.1");
         cmd.env("OD_DATA_DIR", data_dir);
@@ -144,22 +151,21 @@ fn dev_content_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("vendor/open-design"))
 }
 
-/// Locate the `node` binary. `OD_NODE_BIN` overrides; otherwise scan `PATH`
-/// (inherited in the dev terminal). Returns an absolute path so the daemon is
-/// invoked exactly as the packaging spike validated.
-fn resolve_node_bin() -> io::Result<PathBuf> {
+/// Locate the `node` binary. `OD_NODE_BIN` overrides; otherwise scan the
+/// CP5-injected daemon PATH (login-shell reconstruction ∪ GUI PATH), so node is
+/// found even under GUI launch where the bare process PATH is minimal. Returns an
+/// absolute path so the daemon is invoked exactly as the packaging spike validated.
+fn resolve_node_bin(daemon_path: &std::ffi::OsStr) -> io::Result<PathBuf> {
     if let Some(p) = std::env::var_os("OD_NODE_BIN") {
         let pb = PathBuf::from(p);
         if pb.is_file() {
             return Ok(pb);
         }
     }
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let cand = dir.join("node");
-            if cand.is_file() {
-                return Ok(cand);
-            }
+    for dir in std::env::split_paths(daemon_path) {
+        let cand = dir.join("node");
+        if cand.is_file() {
+            return Ok(cand);
         }
     }
     Err(io::Error::new(
