@@ -20,6 +20,12 @@ use axum::Router;
 ///
 /// CP2-Task3 replaces this with a real `Proxy | Native` route table; until then
 /// the fallback *is* the route table (every prefix proxies).
+///
+/// **SSE invariant (CP2-Task2):** this router applies **no response
+/// compression**, because compression buffers Server-Sent Events and breaks
+/// live streaming. If a later task adds a `tower_http::CompressionLayer` for the
+/// static `out/` assets, it MUST exclude `text/event-stream` (e.g. via
+/// `.compress_when(...)`) so the chat/proxy SSE routes stay unbuffered.
 pub fn router(upstream: impl Into<String>) -> Router {
     Router::new()
         .fallback(proxy_handler)

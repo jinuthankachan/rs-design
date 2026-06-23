@@ -15,3 +15,6 @@ tracing = { workspace = true }
 [dev-dependencies]
 # tests spin up a mock upstream + the proxy on ephemeral loopback ports
 tokio = { workspace = true }
+# SSE tests need a delayed body stream (ReceiverStream) + `.next()` on the
+# client's response stream to assert incremental, unbuffered delivery.
+tokio-stream = "0.1"
