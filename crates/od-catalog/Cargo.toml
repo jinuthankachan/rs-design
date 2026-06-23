@@ -4,3 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+# serde for the catalog DTOs; preserve_order keeps i18n map key order identical
+# to the daemon's insertion order (byte-identical JSON, CP4 golden contract).
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+# The daemon's heuristics are regex-driven. We port them with `(?-u)` where the
+# JS used ASCII `\b`/`\w` so CJK literals and word boundaries match byte-for-byte.
+regex = "1"
