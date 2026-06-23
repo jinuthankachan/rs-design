@@ -8,4 +8,6 @@
 //! V1 (CP4): houses the first golden-fixture format + the shared types used by
 //! `od-catalog`. Grows as each route is migrated.
 //
-// TODO(V2): shared DTOs + golden-fixture helpers, added as routes are migrated.
+// TODO(V2): shared DTOs added as routes are migrated.
+
+pub mod golden;
