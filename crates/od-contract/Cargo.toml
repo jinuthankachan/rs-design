@@ -4,3 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+# golden-fixture format + normalization helpers (the "sacred seam" test harness)
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+[dev-dependencies]
+# the golden runner exercises the real axum handlers over the vendored content
+od-server = { workspace = true }
+od-catalog = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
