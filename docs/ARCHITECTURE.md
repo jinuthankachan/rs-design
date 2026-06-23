@@ -54,11 +54,30 @@ Why this shape (vs. webview→daemon directly):
 - Frontend **static-exports** by default (`apps/web/next.config.ts` → `output: 'export'`).
   **Verified in the real engine (CP1, [static-export.md](./spikes/static-export.md)):** renders,
   hydrates, and client-routes in WebKitGTK 2.52.3. It is a **pure client SPA** (only `/`, `/404`,
-  `/_not-found`, `/desktop-pet` exist as HTML) with **origin-relative `/api/*`** calls — so axum
-  must provide **SPA fallback → `index.html`** for deep links and preserve SSE on `/api`. Static
-  chosen over `standalone`; no second Next sidecar.
-- Daemon bundles via **esbuild** (`apps/packaged/esbuild.config.mjs`), not `pkg`.
-- **Two** native addons: `better-sqlite3` and `node-pty`.
+  `/_not-found`, `/desktop-pet` exist as HTML) — so axum must provide **SPA fallback →
+  `index.html`** for deep links and preserve SSE on `/api`. Static chosen over `standalone`; no
+  second Next sidecar.
+- Frontend API origin is **pure relative `/api/*`** (+ `/artifacts/*`, `/frames/*`) — **no
+  build-time base** (no `NEXT_PUBLIC_*` API var / `basePath` / `assetPrefix`). **Audited at CP1
+  ([api-base-wiring.md](./spikes/api-base-wiring.md)), source + built bundle:** the origin is only
+  ever read at runtime as `window.location.origin` = axum, so the route table receives every call
+  with **zero frontend changes / no per-environment `out/` rebuild**. axum must therefore serve the
+  static app **and** `/api`·`/artifacts`·`/frames` from the **same origin** (the catch-all covers
+  all three). BYOK provider `baseUrl` is request-body data to relative `/api/proxy/*` (SSRF stays
+  server-side). The `next.config` dev rewrites are **dev-only** — axum, not `next dev`, owns this
+  proxying.
+- **Daemon packaging (CP1, [daemon-packaging.md](./spikes/daemon-packaging.md), Open Q#2 →
+  resolved):** ship `tsc` output (`dist/cli.js`) **+ a pruned prod `node_modules` + a bundled,
+  stripped Node 24** — **not `pkg`**, and not a single esbuild file (`apps/packaged`'s esbuild uses
+  `packages:external`, bundling only the first-party Electron entry). Reproduced with
+  `pnpm --filter @open-design/daemon deploy --legacy --prod`. **Boots and serves `/api/skills`
+  (155) under a stripped env (`env -i`, empty `PATH`)** — the daemon core needs **zero `PATH`**;
+  only agent-CLI spawn does (CP5). **Size:** ~71 M pruned daemon + ~101 M stripped Node ≈ **172 M**
+  sidecar (content shipped separately). CP3 env gotcha: `OD_RESOURCE_ROOT` is safe-base-checked, so
+  the supervisor must also set `OD_INSTALLATION_DIR` when pointing at external content.
+- **Two** native addons: `better-sqlite3` (loads clean under bundled Node; std libs, GLIBC_2.28)
+  and `node-pty` (**no Linux binary built by default** — CP6 must compile it or ship without the
+  terminal; full RPATH/glibc rigor at CP1-Task4).
 - Daemon env: `OD_PORT` / `OD_BIND_HOST` / `OD_DATA_DIR`; readiness on stdout `[od] listening on <url>`
   (no `/health` route); CORS via `OD_ALLOWED_ORIGINS`.
 - CLI discovery honors explicit `*_BIN` vars (`CLAUDE_BIN`, `CODEX_BIN`, …).
