@@ -76,12 +76,17 @@ Status: implemented; axum→daemon seam verified headlessly against the real dae
 
 ## CP4 — First native route + golden-test harness (V2 dress rehearsal)
 Exit: `od-catalog` routes served by Rust; golden tests byte-identical; `--force-proxy` retained.
-- [ ] Read `skills/` + `design-systems/` from submodule; preserve per-folder LICENSE files
-- [ ] `od-catalog`: `walkdir` over `SKILL.md`/`DESIGN.md` + `gray_matter` frontmatter; match daemon JSON shapes
-- [ ] Golden harness in `od-contract`/`tests/golden` (fixture format + runner + normalization)
-- [ ] `scripts/capture-golden.sh` (read-only) for the three catalog routes
-- [ ] axum handlers → register as `Native`; keep `--force-proxy`
-- [ ] **(verify)** per-route DoD: golden pass, error parity, route flipped, no UI regression
+Status: met. The three file-walk catalog routes (`/api/skills`, `/api/design-systems`,
+`/api/design-templates`) are served natively by `od-catalog`, **byte-identical** to the pinned
+daemon (155 + 150 + 120 entries, 0 mismatches), gated by golden tests; `OD_FORCE_PROXY` reverts.
+The contract's third name `/api/templates` is the SQLite-backed user template store, not a
+file-walk catalog — it stays proxied and migrates with `od-store` (V2 step 2).
+- [x] Read `skills/` + `design-templates/` + `design-systems/` from the submodule (read-only); per-folder LICENSE files are untouched (the crate only reads via `std::fs`)
+- [x] `od-catalog`: faithful port of the daemon's parsers — bespoke YAML-subset frontmatter ([frontmatter.rs](./crates/od-catalog/src/frontmatter.rs)), `listSkills` + all normalizers ([skills.rs](./crates/od-catalog/src/skills.rs)), `listDesignSystems` + manifest/metadata + swatch Forms A–D ([design_systems.rs](./crates/od-catalog/src/design_systems.rs), [swift_colors.rs](./crates/od-catalog/src/swift_colors.rs)). `gray_matter`/`serde_yaml` would diverge, so they are *not* used; serde field order mirrors the daemon's object construction → `JSON.stringify` == `serde_json` (verified byte-present per element)
+- [x] Golden harness in `od-contract` ([golden.rs](./crates/od-contract/src/golden.rs) — `GoldenFixture` + `.meta.json` sidecar + documented `normalize_by_id`) + runner ([tests/golden.rs](./crates/od-contract/tests/golden.rs)) driving the real `od-server` handlers over the vendored content; asserts status + header-subset + byte-identical body, plus a `--force-proxy` revert test (4 tests green)
+- [x] [`scripts/capture-golden.sh`](./scripts/capture-golden.sh) — read-only GET capture from the pinned daemon (boots a throwaway daemon, or `OD_GOLDEN_BASE` against a running one); fixtures pinned at submodule `6afe7ea`
+- [x] axum handlers → `Target::NativeExact` + `RouteTable::native_exact` + `od_server::router_with_catalog` ([catalog.rs](./crates/od-server/src/catalog.rs)); exact-path so siblings (`/api/skills/:id`) and non-`GET` methods (`POST /api/design-systems`) fall through to the proxy; `OD_FORCE_PROXY` keeps the `--force-proxy` rollback lever; supervisor wired via `DaemonLauncher::content_root()`
+- [x] **(verify)** per-route DoD: golden pass (byte-identical) · error parity (live seam: `POST /api/design-systems` 201==201 daemon; sibling/version proxied) · routes flipped to native (`content-type: application/json; charset=utf-8`) · no regression (catch-all proxy unchanged; everything non-catalog still proxies). Live harness: [cp4_seam_verify](./crates/od-server/examples/cp4_seam_verify.rs)
 
 ## CP5 — Acceptance integrations (CLI/PATH, SSE chat, BYOK)
 Exit: the three behavioral done-criteria pass manually.

@@ -15,7 +15,12 @@ lets Rust replace Node one route at a time without the frontend ever knowing whi
 
 ## Route surface (high level — enumerate precisely at CP1 from the pinned daemon)
 
-- Catalog: `GET /api/skills`, `GET /api/design-systems`, `GET /api/templates` — **V2 step 1 (CP4)**
+- Catalog (file-walk reads): `GET /api/skills`, `GET /api/design-systems`,
+  `GET /api/design-templates` — **V2 step 1 (CP4, done)**. (The early plan said
+  `/api/templates`, but in the pinned daemon that path is the **SQLite-backed**
+  user template store, not a file walk — it stays proxied and migrates with
+  `od-store` in V2 step 2. The renderable-template catalogue is
+  `/api/design-templates`.)
 - Persistence: `/api/projects`, conversations, messages, tabs — V2 step 2
 - BYOK proxy: `/api/proxy/{provider}/stream` (SSE) — V2 step 3
 - Artifacts: `/api/artifacts/*` (save/lint) — V2 step 4
