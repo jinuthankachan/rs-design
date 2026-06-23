@@ -6,7 +6,12 @@
 
 use std::net::SocketAddr;
 
-use axum::{extract::Request, response::Response, routing::any, routing::get, Router};
+use axum::{
+    extract::Request,
+    response::Response,
+    routing::{any, get, MethodRouter},
+    Router,
+};
 use od_server::{RouteTable, Target};
 use tokio::net::TcpListener;
 
@@ -137,20 +142,89 @@ async fn non_root_proxy_prefix_forwards_prefix_and_subtree() {
     assert_eq!(subtree, "UPSTREAM:/legacy/deep/path");
 }
 
+/// A CP4-style exact-path native route: `GET` is handled in Rust, every other
+/// method falls through to the method router's fallback (wired to the proxy in
+/// production via `catalog::catalog_routes`).
+fn exact_skills() -> MethodRouter {
+    get(|| async { "NATIVE-EXACT" }).fallback(any(|| async { "METHOD-FALLBACK" }))
+}
+
+#[tokio::test]
+async fn native_exact_serves_path_but_siblings_and_methods_fall_through() {
+    let up = upstream().await;
+    let table = RouteTable::proxy_all(&up).native_exact("/api/skills", exact_skills());
+    let base = format!("http://{}", spawn(table.into_router()).await);
+    let client = reqwest::Client::new();
+
+    // Exact path + GET → native.
+    let native = client
+        .get(format!("{base}/api/skills"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(native, "NATIVE-EXACT");
+
+    // Sibling path → proxied (the daemon still owns `/api/skills/:id`).
+    let sibling = client
+        .get(format!("{base}/api/skills/some-id"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(sibling, "UPSTREAM:/api/skills/some-id");
+
+    // Non-GET on the exact path → method fallback (proxy in production).
+    let posted = client
+        .post(format!("{base}/api/skills"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(posted, "METHOD-FALLBACK");
+}
+
+#[tokio::test]
+async fn force_proxy_reverts_native_exact_to_proxy() {
+    let up = upstream().await;
+    let table = RouteTable::proxy_all(&up)
+        .native_exact("/api/skills", exact_skills())
+        .force_proxy(true);
+    let base = format!("http://{}", spawn(table.into_router()).await);
+
+    let body = reqwest::Client::new()
+        .get(format!("{base}/api/skills"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(body, "UPSTREAM:/api/skills");
+}
+
 /// `Target` is a real public enum (the exit criterion: "route table is a real
 /// `Proxy | Native` type"), constructible and inspectable.
 #[test]
 fn target_is_a_real_typed_enum() {
     let table = RouteTable::new()
         .proxy("/", "http://127.0.0.1:9")
-        .native("/api/skills", Router::new());
+        .native("/api/skills", Router::new())
+        .native_exact("/api/design-systems", exact_skills());
     let kinds: Vec<&str> = table
         .entries()
         .iter()
         .map(|e| match e.target {
             Target::Proxy { .. } => "proxy",
             Target::Native { .. } => "native",
+            Target::NativeExact { .. } => "native-exact",
         })
         .collect();
-    assert_eq!(kinds, ["proxy", "native"]);
+    assert_eq!(kinds, ["proxy", "native", "native-exact"]);
 }

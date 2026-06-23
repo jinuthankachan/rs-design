@@ -30,11 +30,21 @@ use tower_http::trace::TraceLayer;
 use crate::proxy::{self, ProxyState};
 
 /// What handles a matched prefix.
+// The Native variants wrap axum routers (large) while Proxy holds a String; the
+// table is a short-lived builder consumed once by `into_router`, so the size
+// skew is irrelevant and boxing would only obscure the API.
+#[allow(clippy::large_enum_variant)]
 pub enum Target {
     /// Forward to the Node sidecar at this origin (`scheme://host:port`).
     Proxy { upstream: String },
-    /// Handled in Rust by this router (registered at the entry's prefix).
+    /// Handled in Rust by this router, `nest`ed at the entry's prefix (claims the
+    /// whole subtree).
     Native { router: Router },
+    /// Handled in Rust at the **exact** path only (`app.route`), leaving sibling
+    /// paths under the same prefix to fall through to the proxy. CP4 uses this so
+    /// `/api/skills` flips native while `/api/skills/:id` keeps proxying; the
+    /// method router's own fallback forwards non-`GET` methods too.
+    NativeExact { handler: MethodRouter },
 }
 
 /// One `(prefix, target)` row of the route table.
@@ -82,6 +92,17 @@ impl RouteTable {
         self
     }
 
+    /// Add a `NativeExact` entry: `handler` serves the exact `path` only; sibling
+    /// paths and (via the method router's fallback) other methods proxy. This is
+    /// the CP4 catalog flip — see [`Target::NativeExact`].
+    pub fn native_exact(mut self, path: impl Into<String>, handler: MethodRouter) -> Self {
+        self.entries.push(RouteEntry {
+            prefix: path.into(),
+            target: Target::NativeExact { handler },
+        });
+        self
+    }
+
     /// Force every `Native` prefix back to `Proxy` (the CP4 `--force-proxy`
     /// rollback). Returns `self` for chaining.
     pub fn force_proxy(mut self, force: bool) -> Self {
@@ -115,6 +136,14 @@ impl RouteTable {
                     }
                     tracing::debug!(prefix = %entry.prefix, "route: Native");
                     app = app.nest(&entry.prefix, router);
+                }
+                Target::NativeExact { handler } => {
+                    if force_proxy {
+                        tracing::debug!(path = %entry.prefix, "route: NativeExact disabled by force_proxy → proxied");
+                        continue;
+                    }
+                    tracing::debug!(path = %entry.prefix, "route: NativeExact");
+                    app = app.route(&entry.prefix, handler);
                 }
                 Target::Proxy { upstream } => {
                     if entry.prefix == "/" {

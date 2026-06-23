@@ -10,6 +10,8 @@ rust-version.workspace = true
 axum = { workspace = true }
 # reverse-proxy client to the Node sidecar; redirects disabled, streaming bodies
 reqwest = { workspace = true }
+# CP4 first native routes: the read-only skills/design-systems/templates catalog
+od-catalog = { workspace = true }
 # per-request route-resolution logging (TraceLayer); does not buffer SSE bodies
 tower-http = { workspace = true }
 tracing = { workspace = true }
