@@ -51,7 +51,7 @@ Exit: one `docs/spikes/*` note per question; packaging shape decided.
 
 ## CP2 — Stable seam: supervisor + axum catch-all proxy + route table
 Exit: webview loads through axum; SSE streams un-buffered; route table is a real `Proxy|Native` type.
-- [ ] `od-server`: axum fallback `/*path` forwarding via `reqwest`; strip hop-by-hop headers
+- [x] `od-server`: axum fallback `/*path` forwarding via `reqwest`; strip hop-by-hop headers — `ProxyState` (redirects disabled) + `proxy_handler` catch-all in [crates/od-server/src/proxy.rs](./crates/od-server/src/proxy.rs); request/response bodies streamed (unbuffered, SSE-ready), hop-by-hop headers + `Connection`-named tokens stripped both directions (`host`/`content-length` also dropped upstream so `reqwest` re-derives them); upstream failure → `502`. 5 integration tests in [crates/od-server/tests/proxy.rs](./crates/od-server/tests/proxy.rs) (method/path/query, body, both-direction stripping, 502); fmt+clippy clean.
 - [ ] **SSE-safe streaming proxy** (no buffering; preserve `text/event-stream`; no SSE compression) — highest-risk task
 - [ ] Route-table type `(prefix, Proxy{upstream}|Native{service})`; V1 = `("/", Proxy)`; dispatcher
 - [ ] `src-tauri` supervisor: two ephemeral loopback ports (axum + daemon); point webview at axum

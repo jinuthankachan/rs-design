@@ -4,3 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+# webview-facing HTTP/SSE surface (the route table lives here from CP2 on)
+axum = { workspace = true }
+# reverse-proxy client to the Node sidecar; redirects disabled, streaming bodies
+reqwest = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# tests spin up a mock upstream + the proxy on ephemeral loopback ports
+tokio = { workspace = true }
