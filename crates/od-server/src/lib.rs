@@ -10,16 +10,19 @@
 //! - CP4: first `Native` routes (`od-catalog`).
 
 mod proxy;
+mod route_table;
 
 pub use proxy::{proxy_handler, ProxyState};
+pub use route_table::{RouteEntry, RouteTable, Target};
 
 use axum::Router;
 
-/// Build the V1 router: a single catch-all fallback that reverse-proxies every
-/// request to the Node sidecar at `upstream` (scheme + host + port).
+/// Build the V1 router: the route table with a single `("/", Proxy)` entry, so
+/// every request reverse-proxies to the Node sidecar at `upstream` (scheme +
+/// host + port). Convenience wrapper over [`RouteTable::proxy_all`].
 ///
-/// CP2-Task3 replaces this with a real `Proxy | Native` route table; until then
-/// the fallback *is* the route table (every prefix proxies).
+/// V2 migrations add `Native` entries to a [`RouteTable`] instead of calling
+/// this; see [`RouteTable::into_router`].
 ///
 /// **SSE invariant (CP2-Task2):** this router applies **no response
 /// compression**, because compression buffers Server-Sent Events and breaks
@@ -27,7 +30,5 @@ use axum::Router;
 /// static `out/` assets, it MUST exclude `text/event-stream` (e.g. via
 /// `.compress_when(...)`) so the chat/proxy SSE routes stay unbuffered.
 pub fn router(upstream: impl Into<String>) -> Router {
-    Router::new()
-        .fallback(proxy_handler)
-        .with_state(ProxyState::new(upstream))
+    RouteTable::proxy_all(upstream).into_router()
 }

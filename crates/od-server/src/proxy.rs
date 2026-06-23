@@ -116,8 +116,21 @@ fn filter_headers(src: &HeaderMap, extra_drop: &[&str]) -> HeaderMap {
 
 /// axum fallback handler: forward the request to the upstream daemon and relay
 /// the response, both with hop-by-hop headers stripped and bodies streamed.
+///
+/// Thin wrapper over [`forward`] for callers that supply [`ProxyState`] through
+/// the axum `State` extractor. The route-table dispatcher instead captures the
+/// state in a closure and calls [`forward`] directly (see `route_table`).
 pub async fn proxy_handler(
     State(state): State<ProxyState>,
+    req: axum::extract::Request,
+) -> Result<Response, StatusCode> {
+    forward(state, req).await
+}
+
+/// Forward `req` to the upstream daemon held in `state` and relay the response,
+/// both with hop-by-hop headers stripped and bodies streamed (SSE-safe).
+pub(crate) async fn forward(
+    state: ProxyState,
     req: axum::extract::Request,
 ) -> Result<Response, StatusCode> {
     let (parts, body) = req.into_parts();
