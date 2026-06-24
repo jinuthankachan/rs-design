@@ -184,6 +184,119 @@ Run all GUI items together once on a clean desktop session via `cargo tauri dev`
   daemon** on exit. This is the umbrella manual acceptance (also the last box in
   CP6).
 
+### Runbook — how to execute the backlog above
+
+Grouped by the environment each item needs, so they batch into as few sessions
+as possible. Tick the checkboxes above as each step passes.
+
+#### Prerequisite for ALL items
+Run from a **real Ubuntu desktop session** (GNOME Terminal / native TTY with a
+display) — **not** the VS Code integrated terminal: the VS Code snap shell
+crashes GTK on `GLIBC_PRIVATE` (the reason these are GUI-gated). One-time build
+of the daemon + web export the dev launcher serves:
+
+```bash
+cd ~/workspace/opensource/rs-design
+pnpm -C vendor/open-design install
+pnpm -C vendor/open-design --filter @open-design/daemon build
+pnpm -C vendor/open-design --filter @open-design/web build   # creates apps/web/out/
+```
+
+#### Session 1 — dev desktop session (`cargo tauri dev`)
+Covers **CP3 GUI**, **CP5 GUI chat**, and **KI-1 offline**. Launch once, do all three:
+
+```bash
+RUST_LOG=info cargo tauri dev
+```
+
+**Step 1 — CP3 full in-window launch.** Watch the terminal, then the window:
+1. Logs show `embedded daemon ready; catalog reachable via axum`, then
+   `pointing webview at od-server url=http://127.0.0.1:<port>`.
+2. **Catalog populates** — the UI lists real skills + design-systems (browse them).
+3. **Deep-link hard-reload (R1)** — navigate to a sub-route (e.g. `/projects` or
+   `/settings`), press **Ctrl+R**; it must re-render the route, **not** 404.
+4. **Live SSE incremental** — confirmed visually in Step 2 (the token stream).
+
+✅ Pass: window opens, catalog shows real entries, hard-reload resolves.
+
+**Step 2 — CP5 chat streams tokens + TodoCard.** Needs **one agent CLI on PATH**
+(e.g. `claude`) *or* a BYOK key configured in Settings:
+1. Start a chat whose answer produces a todo list / multi-step plan.
+2. Watch tokens arrive **incrementally** (not all at once) — the live `EventSource`.
+3. Confirm the **pinned TodoCard** renders above the composer and updates as steps
+   complete.
+
+✅ Pass: tokens stream progressively; TodoCard appears and updates live.
+
+**Step 3 — KI-1 offline artifact rendering.** With the app still open:
+```bash
+nmcli networking off      # or pull the network / use an airgapped box
+```
+1. Open showcase skills that pull **Google Fonts / Three.js / Tailwind from CDNs**.
+2. Observe the expected degradation: system-font drift (no `@font-face`), broken
+   WebGL hero scenes / 404'd CDN scripts.
+3. Decide + record the offline/bundling strategy (bundle fonts? vendor
+   Three.js/Tailwind? accept drift?) in
+   [docs/spikes/webkitgtk-render.md](./docs/spikes/webkitgtk-render.md).
+```bash
+nmcli networking on
+```
+✅ Pass: offline behavior observed and a documented bundling decision made.
+
+#### Session 2 — live API key (BYOK happy-path) — **CP5 live key**
+Can be done in the same dev window if you have a key:
+1. In **Settings**, configure a real public provider + API key (e.g. Anthropic or
+   OpenAI public endpoint).
+2. Ensure **no agent CLI** is in use (to isolate the BYOK path).
+3. Send a chat message; confirm tokens stream from the real public endpoint.
+
+✅ Pass: a live round-trip against a public provider streams tokens (the one thing
+the CI loopback mock can't prove).
+
+#### Session 3 — packaged build + clean-machine acceptance — **CP6 umbrella + KI-4**
+
+**Step A — build the installers** (on your dev/build box):
+```bash
+bash scripts/build-daemon-bundle.sh    # assembles runtime/ (auto-fetches Node 24)
+bash scripts/verify-bundle.sh          # native-addon load-test gate
+cargo tauri build                      # → src-tauri/target/release/bundle/{deb,appimage}/
+```
+(Or download the `rs-design-installers` artifact from CI's `package.yml` run.)
+
+**Step B — clean Ubuntu 24.04, zero Node/pnpm.** Use a fresh VM / container /
+spare machine with no Node and no pnpm. Copy both artifacts over and install each:
+```bash
+# .deb path
+sudo apt install ./rs-design_*_amd64.deb
+rs-design                              # or launch from the app menu
+
+# AppImage path (separate run)
+chmod +x ./rs-design_*_amd64.AppImage
+./rs-design_*_amd64.AppImage
+```
+
+For **each** installer, run the full acceptance set in-window:
+1. **Health-check** — app launches, catalog populates (no daemon errors).
+2. **≥5 showcase skills render** correctly in WebKitGTK.
+3. **SSE chat** streams (with a CLI or BYOK key) + TodoCard renders.
+4. **BYOK** works with no CLI present.
+5. **KI-4 `<video>`** — open a `<video>` artifact and confirm playback. The
+   AppImage bundles GStreamer (`bundleMediaFramework: true`); for the `.deb`, if
+   video is silent/black install host plugins:
+   `sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`.
+6. **No orphan daemon** — quit the app, then:
+   ```bash
+   pgrep -af 'daemon start --headless' || echo "no orphan daemon ✓"
+   ```
+
+✅ Pass: both `.deb` and `.AppImage` install and pass 1–6 on a Node-free machine
+with no surviving daemon process.
+
+#### After verifying
+Tick the backlog checkboxes above **and** the CP3/CP5/CP6 final `(verify)` boxes,
+and record findings (especially the KI-1 offline decision) in the relevant
+`docs/spikes/*.md`.
+
 ---
 
 ## V1 done-criteria → checkpoint
