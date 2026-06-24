@@ -15,6 +15,10 @@ dist/
 
 # --- Packaging / staging artifacts ---
 /bundle/
+# CP6 bundle staging: built by scripts/{fetch-node-runtime,build-daemon-bundle}.sh
+# at package time (node binary ~101 M, pruned daemon ~71 M, content). Reproducible
+# build output — never committed; CI runs the scripts before `tauri build`.
+/src-tauri/bundle-resources/
 *.deb
 *.AppImage
 *.rpm
