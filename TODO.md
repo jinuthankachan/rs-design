@@ -197,9 +197,13 @@ of the daemon + web export the dev launcher serves:
 
 ```bash
 cd ~/workspace/opensource/rs-design
-pnpm -C vendor/open-design install
-pnpm -C vendor/open-design --filter @open-design/daemon build
-pnpm -C vendor/open-design --filter @open-design/web build   # creates apps/web/out/
+# The submodule pins pnpm@10.33.2 (packageManager) and uses `pnpm.overrides`,
+# which pnpm 11 IGNORES — so use the pinned version, don't bypass the check.
+# `corepack pnpm@10.33.2 …` works even if a newer standalone pnpm shadows the
+# corepack shim on PATH (alternatively: `npm rm -g pnpm` then `corepack enable`).
+corepack pnpm@10.33.2 -C vendor/open-design install
+corepack pnpm@10.33.2 -C vendor/open-design --filter @open-design/daemon build
+corepack pnpm@10.33.2 -C vendor/open-design --filter @open-design/web build   # creates apps/web/out/
 ```
 
 #### Session 1 — dev desktop session (`cargo tauri dev`)
