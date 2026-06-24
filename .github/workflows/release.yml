@@ -1,0 +1,60 @@
+# CP7 — Release: on a `v*` tag, build the installers and publish a GitHub release.
+#
+# Reuses package.yml (build + install-test) so the released artifacts are the
+# exact ones CI gates, then attaches them to a release whose version stamps both
+# our app version AND the pinned upstream submodule SHA (provenance of the
+# embedded Open Design tree).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Build + install-test the .deb/.AppImage via the shared package workflow.
+  package:
+    uses: ./.github/workflows/package.yml
+
+  publish:
+    name: publish release
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        # No submodule content needed: release-version.sh reads the pinned
+        # upstream SHA from the committed gitlink.
+
+      - name: Compute version (app version + upstream SHA)
+        id: ver
+        run: bash scripts/release-version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: dist
+
+      - name: List artifacts
+        run: ls -lh dist/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: rs-design ${{ steps.ver.outputs.version }}
+          body: |
+            Native Ubuntu desktop build of **Open Design** (Tauri + Rust) — installs with zero Node/pnpm.
+
+            - App version: `${{ steps.ver.outputs.product_version }}`
+            - Embedded upstream (open-design submodule): `${{ steps.ver.outputs.upstream_sha }}`
+
+            Artifacts: `.deb` (Ubuntu/Debian) and `.AppImage` (portable). Both are built and
+            install-tested under Xvfb by the Package workflow before this release is cut.
+          files: dist/*
+          fail_on_unmatched_files: true
