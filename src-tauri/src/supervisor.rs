@@ -31,7 +31,7 @@ use tokio::sync::{oneshot, watch};
 use tokio::time::sleep;
 
 use crate::env_inject;
-use crate::launcher::{self, DaemonLauncher, DevNodeLauncher};
+use crate::launcher::{self, BundledLauncher, DaemonLauncher, DevNodeLauncher};
 
 /// Overall ceiling on becoming ready (listening line + first `/api/skills` 200).
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -98,8 +98,19 @@ impl Supervisor {
 /// Start the axum server on an ephemeral loopback port and spawn + health-check
 /// the embedded Node daemon on the reserved daemon port. Returns immediately with
 /// a [`Supervisor`]; call [`Supervisor::wait_ready`] to await the backend.
-pub fn start() -> io::Result<Supervisor> {
-    let data_dir = launcher::dev_data_dir();
+pub fn start(resource_dir: Option<PathBuf>) -> io::Result<Supervisor> {
+    // Packaged mode iff a built bundle is present under the Tauri resource dir.
+    // `cargo tauri dev` has a resource dir but no `runtime/` bundle, so it falls
+    // through to the dev launcher + the vendored submodule.
+    let runtime_dir = resource_dir.map(|r| r.join("runtime"));
+    let packaged = runtime_dir
+        .as_ref()
+        .map(|r| r.join("apps/daemon/dist/cli.js").is_file())
+        .unwrap_or(false);
+
+    // Packaged install writes to XDG `rs-design/`; the dev loop to `rs-design/dev`
+    // so the two never share a SQLite store.
+    let data_dir = launcher::data_dir(packaged);
     ensure_first_run_config(&data_dir)?;
 
     // CP5 env injection (V1 gotcha #1): reconstruct the login-shell PATH so the
@@ -115,8 +126,15 @@ pub fn start() -> io::Result<Supervisor> {
         "daemon env injected (PATH reconstruction + *_BIN overrides)"
     );
 
-    let launcher: Arc<dyn DaemonLauncher> = Arc::new(DevNodeLauncher::resolve(injected.path)?);
-    tracing::info!(launcher = %launcher.describe(), data_dir = %data_dir.display(), "daemon launcher resolved");
+    let launcher: Arc<dyn DaemonLauncher> = if packaged {
+        let runtime = runtime_dir
+            .as_ref()
+            .expect("packaged implies a runtime dir");
+        Arc::new(BundledLauncher::resolve(runtime, &data_dir, injected.path)?)
+    } else {
+        Arc::new(DevNodeLauncher::resolve(injected.path)?)
+    };
+    tracing::info!(packaged, launcher = %launcher.describe(), data_dir = %data_dir.display(), "daemon launcher resolved");
 
     // Reserve the daemon's port (the spawn below binds it for real).
     let daemon_port = reserve_ephemeral_port()?;
