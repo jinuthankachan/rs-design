@@ -12,9 +12,11 @@
 mod catalog;
 mod proxy;
 mod route_table;
+mod security;
 
 pub use proxy::{proxy_handler, ProxyState};
 pub use route_table::{RouteEntry, RouteTable, Target};
+pub use security::set_security_headers;
 
 use axum::Router;
 use od_catalog::CatalogRoots;
@@ -32,7 +34,17 @@ use od_catalog::CatalogRoots;
 /// static `out/` assets, it MUST exclude `text/event-stream` (e.g. via
 /// `.compress_when(...)`) so the chat/proxy SSE routes stay unbuffered.
 pub fn router(upstream: impl Into<String>) -> Router {
-    RouteTable::proxy_all(upstream).into_router()
+    with_security_headers(RouteTable::proxy_all(upstream).into_router())
+}
+
+/// Attach the authoritative CSP (+ hardening) response headers to HTML responses
+/// (CP6). Applied by the public router builders so every webview-facing surface
+/// — proxied app shell HTML included — carries the policy, while SSE/JSON/asset
+/// responses pass through untouched. See [`security`].
+fn with_security_headers(router: Router) -> Router {
+    router.layer(axum::middleware::map_response(
+        security::set_security_headers,
+    ))
 }
 
 /// Build the CP4 router: the three `od-catalog` catalog reads served natively
@@ -57,8 +69,10 @@ pub fn router_with_catalog(
     for (path, handler) in catalog::catalog_routes(roots, upstream.clone()) {
         table = table.native_exact(path, handler);
     }
-    table
-        .proxy("/", upstream)
-        .force_proxy(force_proxy)
-        .into_router()
+    with_security_headers(
+        table
+            .proxy("/", upstream)
+            .force_proxy(force_proxy)
+            .into_router(),
+    )
 }
