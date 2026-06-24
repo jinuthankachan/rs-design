@@ -83,3 +83,53 @@ attribution intact (e.g. `guizang-ppt`). See `NOTICE`.
 ## Targets
 - `.deb` — declares webkit2gtk runtime + patchelf-related deps.
 - `.AppImage` — self-contained; needs `patchelf` at build time.
+
+## CP6 build path (implemented)
+
+The package is built in two stages: assemble the daemon resource tree, then run
+the Tauri bundler. Three scripts produce the resource tree (all idempotent;
+output staged under `src-tauri/bundle-resources/runtime/`, gitignored):
+
+```bash
+# 1. Pin + place the Node 24 runtime (downloads, sha256-verifies, strips, records
+#    NODE_LICENSE). Auto-invoked by step 2 if absent.
+scripts/fetch-node-runtime.sh
+
+# 2. Assemble the runtime layout: pnpm deploy + prune the daemon, compile node-pty
+#    for linux-x64, copy web out/ + content (LICENSEs preserved). Use SKIP_BUILD=1
+#    when apps/daemon/dist + apps/web/out are already built in the submodule.
+scripts/build-daemon-bundle.sh           # ~363 M runtime/ (node 101M, daemon 72M, web 51M, content 58M)
+
+# 3. Post-bundle gate: load-test both .node addons under the bundled Node
+#    (env -i / empty PATH). CP6/CP7 regression catch for ABI/glibc/missing-binary.
+scripts/verify-bundle.sh
+
+# 4. Bundle into .deb + .AppImage (ships runtime/ via bundle.resources → runtime).
+cargo tauri build
+```
+
+**Runtime layout** (one root makes the daemon's own path resolution line up —
+`runtime/apps/daemon/dist` ⇒ `PROJECT_ROOT = runtime`, `STATIC_DIR =
+runtime/apps/web/out`, with `OD_RESOURCE_ROOT = OD_INSTALLATION_DIR = runtime`):
+
+```
+<resource_dir>/runtime/
+  node  NODE_LICENSE  NODE_VERSION
+  apps/daemon/{dist,node_modules,package.json,bin}    # pnpm deploy, pruned
+  apps/web/out/                                        # Next static export
+  skills/ design-systems/ design-templates/ craft/ prompt-templates/ plugins/
+  frames/  community-pets/                             # remapped from assets/
+```
+
+**Resources, not `externalBin`.** We ship the Node binary inside `runtime/` as a
+resource and the `BundledLauncher` **materializes it into the writable XDG data
+dir + `chmod +x`** at launch — because an AppImage mounts its resources read-only
+and Tauri's resource copy can drop the exec bit. We spawn `node` ourselves (not
+via Tauri's shell sidecar), so `externalBin` buys nothing. The `.node` addons are
+`dlopen`-ed and need no exec bit, so only `node` is materialized.
+
+**Verified at CP6 (headless):** the assembled bundle boots under `env -i` / empty
+`PATH` and serves 155 skills + 150 design-systems + `index.html` (200) + 457
+plugins; `verify-bundle.sh` passes (better-sqlite3 sqlite 3.53.1 + node-pty,
+glibc floor 2.34 ≤ 24.04's 2.39). The full `.deb`/`.AppImage` install on a clean
+machine is the GUI/clean-machine verify item (CP6 final box + CP7 CI).
