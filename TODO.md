@@ -104,15 +104,23 @@ detection. Full write-up: [docs/spikes/cp5-acceptance.md](./docs/spikes/cp5-acce
 
 ## CP6 — Package: bundled daemon + `.deb` + `.AppImage`, clean-machine launch
 Exit: both artifacts install on a clean Ubuntu 24.04 (zero Node/pnpm) and pass all behaviors.
-- [ ] `scripts/build-daemon-bundle.sh`: esbuild daemon + pruned prod deps (prebuilt `better-sqlite3` + `node-pty`)
-- [ ] Pin + place a Node 24 linux-x64 runtime as a resource (record license)
-- [ ] Verify bundled Node loads both `.node` addons (RPATH/dlopen/glibc)
-- [ ] Tauri `bundle.resources`/`externalBin`: ship `out/`, daemon tree, Node binary, content (with LICENSEs); sidecar perms
-- [ ] `BundledLauncher` (resolve resource paths; inject env)
-- [ ] Packaged `OD_DATA_DIR` → XDG; first-run creates it + telemetry-off config
-- [ ] **Authoritative response CSP — deferred from CP2** ([cp2-seam spike](./docs/spikes/cp2-seam.md)): the webview loads the external axum http origin, so the `tauri.conf.json` config CSP only governs Tauri-origin content. Have axum emit a hardened `Content-Security-Policy` response header for served HTML (frame/connect/script scoped for the artifact iframes + loopback `/api`); reconcile with the dev-loose config CSP.
-- [ ] Bundler config for `deb` + `appimage`; generate real icons (`cargo tauri icon`); deb depends
-- [ ] **(verify)** clean Ubuntu 24.04, no Node/pnpm: install `.deb` + `.AppImage`; health-check, native catalog, ≥5 skills render, SSE chat, BYOK; no orphan daemon
+Status: implemented + headlessly verified. The three build scripts assemble a
+~363 M `runtime/` resource tree that **boots under `env -i`/empty `PATH` and
+serves 155 skills + 150 design-systems + `index.html` (200) + 457 plugins**;
+`verify-bundle.sh` passes both `.node` addons under the bundled Node. The
+`BundledLauncher` resolves it from the Tauri resource dir and materializes node
+(AppImage read-only safe). The actual `.deb`/`.AppImage` install on a **clean**
+machine remains the umbrella manual acceptance (final box + CP7 CI). Build path
+written up in [docs/PACKAGING.md](./docs/PACKAGING.md).
+- [x] `scripts/build-daemon-bundle.sh`: **`pnpm deploy` + pruned prod deps** (not esbuild — the spike showed esbuild only bundles the Electron entry; model is `tsc` JS + pruned `node_modules`). Applies the daemon-packaging prune rules, **compiles `node-pty` for linux-x64** (best-effort; terminal out of V1 smoke scope), keeps the prebuilt `better-sqlite3` `.node`, lays out `runtime/` so the daemon's `PROJECT_ROOT`/`STATIC_DIR`/`OD_RESOURCE_ROOT` all resolve on one root. cp -a preserves per-folder LICENSEs.
+- [x] Pin + place a Node 24 linux-x64 runtime as a resource (record license) — [`scripts/fetch-node-runtime.sh`](./scripts/fetch-node-runtime.sh) pins **v24.16.0** (ABI 137), sha256-verifies the published tarball, strips it (118→101 M), records `NODE_LICENSE` + `NODE_VERSION`.
+- [x] Verify bundled Node loads both `.node` addons (RPATH/dlopen/glibc) — [`scripts/verify-bundle.sh`](./scripts/verify-bundle.sh) `require()`s both under `env -i`/empty PATH and runs one real op each (better-sqlite3 SQL roundtrip + sqlite_version 3.53.1; node-pty real PTY). **PASS**, glibc floor GLIBC_2.34 ≤ 24.04's 2.39. CP6/CP7 regression gate.
+- [x] Tauri `bundle.resources` ship `out/`, daemon tree, Node binary, content (with LICENSEs); sidecar perms — `bundle.resources: { "bundle-resources/runtime": "runtime" }` in [tauri.conf.json](./src-tauri/tauri.conf.json). **Resources (not `externalBin`)**: we spawn node ourselves and AppImage mounts resources read-only, so `BundledLauncher` materializes node to the writable data dir + `chmod +x` (`.node` addons are dlopen'd → no exec bit needed).
+- [x] `BundledLauncher` (resolve resource paths; inject env) — [launcher.rs](./src-tauri/src/launcher.rs): resolves `<resource>/runtime`, shares `configure_daemon_command` with `DevNodeLauncher` (identical launch contract). Supervisor picks it by probing `runtime/apps/daemon/dist/cli.js`; `cargo tauri dev` (no bundle) → `DevNodeLauncher`.
+- [x] Packaged `OD_DATA_DIR` → XDG; first-run creates it + telemetry-off config — `launcher::data_dir(packaged)`: packaged → `$XDG_DATA_HOME/rs-design`, dev → `rs-design/dev` (never share a SQLite store); `OD_DATA_DIR` still overrides. First-run config + telemetry-off seeding (CP3/CP5) run against the per-mode dir.
+- [x] **Authoritative response CSP — deferred from CP2** ([cp2-seam spike](./docs/spikes/cp2-seam.md)): axum `set_security_headers` ([security.rs](./crates/od-server/src/security.rs)) stamps an authoritative `Content-Security-Policy` (+ nosniff + referrer-policy) on `text/html` only — JSON/assets/**SSE** untouched — and **overwrites** any upstream CSP. Hardened (`object-src 'none'`, `base-uri`/`frame-ancestors 'self'`) but allows `blob:`/`data:`/`https:` for the sandboxed `srcdoc` artifact iframes (which inherit the shell CSP). 3 tests; full od-server (18) + golden (4) green.
+- [x] Bundler config for `deb` + `appimage`; generate real icons (`cargo tauri icon`); deb depends — real 1024² icon set (replacing the 1×1 placeholder); `deb.depends: [libwebkit2gtk-4.1-0, libgtk-3-0]`; `appimage.bundleMediaFramework: true` (GStreamer for `<video>` — addresses KI-4 on the AppImage).
+- [ ] **(verify)** clean Ubuntu 24.04, no Node/pnpm: install `.deb` + `.AppImage`; health-check, native catalog, ≥5 skills render, SSE chat, BYOK; no orphan daemon — **clean-machine gated** (see manual backlog). Bundle boot + addon load + catalog/web serving verified headlessly above; what remains is the in-engine install acceptance on a Node-free machine.
 
 ## CP7 — CI/CD: build, install-test, golden + e2e, release
 Exit: green CI producing installable `.deb` + `.AppImage`, gated by golden tests.
@@ -156,7 +164,10 @@ Run all GUI items together once on a clean desktop session via `cargo tauri dev`
   (system-font drift, broken WebGL/CDN). Decide + verify the bundling/offline
   strategy at CP6 — see [docs/spikes/webkitgtk-render.md](./docs/spikes/webkitgtk-render.md).
 - [ ] **(CP6/CP1, GUI — KI-4)** Ensure **GStreamer plugins** are present so
-  `<video>` artifacts play in WebKitGTK; verify on the packaged app.
+  `<video>` artifacts play in WebKitGTK; verify on the packaged app. **Addressed
+  in config:** `appimage.bundleMediaFramework: true` bundles GStreamer into the
+  AppImage; the `.deb` relies on the host's webkit2gtk pulling GStreamer. What
+  remains is the in-engine `<video>` playback check on both packaged artifacts.
 - [ ] **(CP6, clean machine)** Clean Ubuntu 24.04, **zero Node/pnpm**: install
   `.deb` + `.AppImage`, then run the whole acceptance set in-window (health-check,
   native catalog, ≥5 skills render, SSE chat, BYOK) and confirm **no orphan
