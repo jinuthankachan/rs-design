@@ -124,12 +124,22 @@ written up in [docs/PACKAGING.md](./docs/PACKAGING.md).
 
 ## CP7 — CI/CD: build, install-test, golden + e2e, release
 Exit: green CI producing installable `.deb` + `.AppImage`, gated by golden tests.
-- [ ] GH Actions on `ubuntu-24.04`: prereqs, cache cargo+pnpm, build frontend+daemon+workspace, `tauri build`
-- [ ] CI: install `.deb` + headless launch smoke under Xvfb (health-check + `/api/skills` 200)
-- [ ] CI: golden suite + `cargo test --workspace` + clippy/fmt
-- [ ] **(spike→impl)** minimal WebKitGTK e2e under Xvfb (catalog + one SSE event; mock BYOK provider)
-- [ ] Release workflow: attach artifacts; version = our version + upstream submodule SHA
-- [ ] Document the contributor build path in `docs/PACKAGING.md`
+Status: implemented. Three `ubuntu-24.04` workflows in `.github/workflows/`:
+`ci.yml` (fmt·clippy·`cargo test --workspace` incl. golden·seam e2e),
+`package.yml` (build daemon bundle → `verify-bundle.sh` → `cargo tauri build` →
+install `.deb` + launch the real app in WebKitGTK under Xvfb → upload installers),
+`release.yml` (tag `v*` → reuse `package.yml`, publish release stamped with app
+version + upstream SHA). The offline e2e drives the real axum seam with a loopback
+mock BYOK provider. CI path is locally green for the fast gate (fmt/clippy/test+
+golden/seam-e2e); the install-test + in-engine launch are exercised on the CI
+runner (display-gated locally). See [docs/PACKAGING.md](./docs/PACKAGING.md) "CP7
+CI/CD".
+- [x] GH Actions on `ubuntu-24.04`: prereqs, cache cargo (`Swatinem/rust-cache`)+pnpm (corepack), build frontend+daemon+workspace, `tauri build` — `ci.yml` (check job) + `package.yml`
+- [x] CI: install `.deb` + headless launch smoke under Xvfb (health-check + `/api/skills` 200) — `package.yml` → [`scripts/ci-install-smoke.sh`](./scripts/ci-install-smoke.sh): `apt install ./*.deb`, launch `/usr/bin/rs-design` under `xvfb-run`, parse the app's axum origin from its logs, assert catalog 200, assert no orphan daemon on exit
+- [x] CI: golden suite + `cargo test --workspace` + clippy/fmt — `ci.yml` check job (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` runs the od-contract golden tests)
+- [x] **(spike→impl)** minimal WebKitGTK e2e under Xvfb (catalog + one SSE event; mock BYOK provider) — loopback OpenAI mock ([`scripts/mock-byok-openai.mjs`](./scripts/mock-byok-openai.mjs)) + [`scripts/e2e-smoke.sh`](./scripts/e2e-smoke.sh) (seam, in `ci.yml`) and the in-engine variant in `ci-install-smoke.sh` (`package.yml`): a `POST /api/proxy/openai/stream` round-trip streams the mock token back as SSE — covers catalog + one SSE event + mock BYOK in one round-trip
+- [x] Release workflow: attach artifacts; version = our version + upstream submodule SHA — `release.yml` + [`scripts/release-version.sh`](./scripts/release-version.sh) (`<app>+od.<upstream-sha>`, reads the pinned gitlink SHA)
+- [x] Document the contributor build path in `docs/PACKAGING.md` — added "CP7 CI/CD" + a local "Contributor build path" mirroring the three workflows
 
 ---
 
