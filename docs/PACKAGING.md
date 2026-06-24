@@ -133,3 +133,55 @@ via Tauri's shell sidecar), so `externalBin` buys nothing. The `.node` addons ar
 plugins; `verify-bundle.sh` passes (better-sqlite3 sqlite 3.53.1 + node-pty,
 glibc floor 2.34 ≤ 24.04's 2.39). The full `.deb`/`.AppImage` install on a clean
 machine is the GUI/clean-machine verify item (CP6 final box + CP7 CI).
+
+## CP7 CI/CD (implemented)
+
+Three GitHub Actions workflows on `ubuntu-24.04` (`.github/workflows/`):
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | push to `main`, all PRs | `cargo fmt --check` · `cargo clippy -D warnings` · `cargo test --workspace` (**includes the golden suite**) · seam e2e (`scripts/e2e-smoke.sh`) |
+| `package.yml` | push to `main`, `workflow_dispatch`, `workflow_call` | build the daemon bundle → `verify-bundle.sh` → `cargo tauri build` → install-test the `.deb` + launch the real app in WebKitGTK under Xvfb (`scripts/ci-install-smoke.sh`) → upload `.deb` + `.AppImage` |
+| `release.yml` | tag `v*` | reuses `package.yml`, then publishes a GitHub release whose version is **app version + pinned upstream submodule SHA** (`scripts/release-version.sh`) with both installers attached |
+
+**The e2e harness.** A loopback OpenAI-compatible mock provider
+(`scripts/mock-byok-openai.mjs`) lets the BYOK path run offline (the SSRF guard
+allows loopback). Two drivers exercise it through the **real axum seam the webview
+uses**:
+
+- `scripts/e2e-smoke.sh` — headless seam-level: `GET /api/skills` (catalog) + a
+  `POST /api/proxy/openai/stream` round-trip that streams the mock's token back as
+  SSE (the "one SSE event + mock BYOK" requirement). Runs in `ci.yml`.
+- `scripts/ci-install-smoke.sh` — installs the `.deb`, launches the **packaged
+  app** under `xvfb-run` (real WebKitGTK + supervisor + bundled Node + daemon),
+  parses the app's ephemeral axum origin from its logs, runs the same
+  catalog + BYOK assertions in-engine, and asserts **no orphan daemon** survives
+  window close. Runs in `package.yml`.
+
+### Contributor build path (local, mirrors CI)
+
+```bash
+# 0. system prereqs (once) — see "Build prerequisites" above; CI installs the
+#    same set plus xvfb + jq for the install-test.
+
+# 1. fast gate (what ci.yml runs)
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace                      # golden suite included
+pnpm -C vendor/open-design install
+pnpm -C vendor/open-design --filter @open-design/daemon build
+bash scripts/e2e-smoke.sh                    # catalog + SSE + mock BYOK (seam)
+
+# 2. installers (what package.yml runs)
+bash scripts/build-daemon-bundle.sh          # assemble runtime/ (auto-fetches Node)
+bash scripts/verify-bundle.sh                # native-addon load-test gate
+cargo tauri build                            # → src-tauri/target/release/bundle/{deb,appimage}/
+bash scripts/ci-install-smoke.sh             # install .deb + launch in WebKitGTK (needs a display/Xvfb)
+
+# 3. cut a release (what release.yml runs on a v* tag)
+bash scripts/release-version.sh              # prints version = <app>+od.<upstream-sha>
+git tag v0.1.0 && git push origin v0.1.0     # triggers release.yml
+```
+
+Bump the app version in `src-tauri/tauri.conf.json` before tagging; the release
+version is derived from it plus the pinned `vendor/open-design` submodule SHA.
