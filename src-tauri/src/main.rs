@@ -30,8 +30,13 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            // Start axum + spawn and health-check the embedded daemon.
-            let supervisor = supervisor::start()?;
+            // Start axum + spawn and health-check the embedded daemon. In a
+            // packaged build the daemon bundle lives under the Tauri resource dir
+            // (`<resource>/runtime/`, CP6); in `cargo tauri dev` that bundle is
+            // absent and the supervisor falls back to the dev launcher + vendored
+            // submodule.
+            let resource_dir = app.path().resource_dir().ok();
+            let supervisor = supervisor::start(resource_dir)?;
             let axum_url = supervisor.axum_url.clone();
 
             // Gate the window on a reachable backend, but never block the dev
