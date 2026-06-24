@@ -1,0 +1,103 @@
+# CP7 — Package: build the .deb + .AppImage and install-test them in WebKitGTK.
+#
+# Assembles the bundled-daemon resource tree (pnpm deploy + pruned deps + Node 24
+# + content), load-tests the native addons, runs `cargo tauri build`, then
+# installs the .deb and launches the real packaged app under Xvfb to smoke the
+# catalog + an SSE/BYOK round-trip (the in-engine e2e). Uploads both installers.
+#
+# Runs on push to main and on demand; release.yml reuses it via workflow_call.
+name: Package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      artifact:
+        description: Name of the uploaded installers artifact
+        value: ${{ jobs.package.outputs.artifact }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: build installers + install-test (Xvfb)
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact: rs-design-installers
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+            libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf libssl-dev build-essential curl wget file \
+            xvfb jq desktop-file-utils
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install tauri-cli
+        uses: cargo-bins/cargo-binstall@main
+      - run: cargo binstall -y tauri-cli --version '^2'
+
+      - name: Install workspace deps (pnpm)
+        working-directory: vendor/open-design
+        run: pnpm install --frozen-lockfile
+
+      # Stage 1: assemble runtime/ (builds daemon tsc + web export, pnpm deploy +
+      # prune, compile node-pty best-effort, copy content, fetch + pin Node 24).
+      - name: Build daemon bundle
+        run: bash scripts/build-daemon-bundle.sh
+
+      # Stage 2: post-bundle gate — load-test both .node addons under bundled Node.
+      - name: Verify bundle (native addon load-test)
+        run: bash scripts/verify-bundle.sh
+
+      # Stage 3: bundle into .deb + .AppImage (ships runtime/ via bundle.resources).
+      - name: cargo tauri build
+        run: cargo tauri build
+
+      - name: List built artifacts
+        run: find src-tauri/target -path '*bundle/*' \( -name '*.deb' -o -name '*.AppImage' \) -print
+
+      # Stage 4: install the .deb and launch the real app under Xvfb; smoke the
+      # catalog + a mock-BYOK SSE round-trip; assert no orphan daemon on exit.
+      - name: Install-test + WebKitGTK launch smoke
+        run: bash scripts/ci-install-smoke.sh
+
+      - name: Collect installers
+        run: |
+          mkdir -p dist
+          find src-tauri/target -path '*bundle/deb/*.deb' -exec cp {} dist/ \;
+          find src-tauri/target -path '*bundle/appimage/*.AppImage' -exec cp {} dist/ \;
+          ls -lh dist/
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: rs-design-installers
+          path: dist/*
+          if-no-files-found: error
