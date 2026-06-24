@@ -44,6 +44,17 @@ bundle/
 └── content/        # skills/ + design-systems/ + frames/ (per-folder LICENSE files preserved)
 ```
 
+> **Deploy with `node-linker=hoisted` (required).** The default isolated linker lays out
+> `node_modules` as **symlinks** into a `.pnpm` store (e.g. `@open-design/sidecar-proto →
+> ../.pnpm/…`). **Tauri's `bundle.resources` copier does not preserve symlinks**, so the packaged
+> app loses every `@open-design/*` workspace dep and the daemon dies on boot with
+> `ERR_MODULE_NOT_FOUND: '@open-design/sidecar-proto'` (supervisor then restart-loops and gives
+> up). `build-daemon-bundle.sh` therefore deploys with `--config.node-linker=hoisted`, emitting
+> real directories that survive the copy, and both it and `verify-bundle.sh` assert the workspace
+> deps are present, non-symlinked, real dirs. The same script invokes the submodule-pinned pnpm via
+> `corepack pnpm@<pinned>` (a newer global pnpm trips the `packageManager` guard and ignores
+> `pnpm.overrides`).
+
 Daemon sidecar (node + daemon) ≈ **172 M**. The CP6 `scripts/build-daemon-bundle.sh` prune rules
 (measured to take the daemon 145 M → 71 M): drop `node-pty/prebuilds/{win32-*,darwin-*}` (−58 M
 dead cross-platform weight), `better-sqlite3/{deps,src,build/Release/obj}` (−10 M build-only),
