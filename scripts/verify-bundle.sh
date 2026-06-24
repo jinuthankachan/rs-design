@@ -30,6 +30,18 @@ BSQLITE_DIR="$(find "$NM" -type d -name better-sqlite3 2>/dev/null | head -1 || 
 PTY_DIR="$(find "$NM" -type d -name node-pty 2>/dev/null | head -1 || true)"
 [[ -n "$BSQLITE_DIR" ]] || die "better-sqlite3 not found under $NM"
 
+# Workspace-dep guard. The daemon imports 8 @open-design/* workspace packages at
+# runtime; with the default isolated linker these are SYMLINKS into .pnpm that
+# Tauri's resource copier drops, leaving the packaged daemon to die with
+# ERR_MODULE_NOT_FOUND. The bundle MUST carry them as real, resolvable dirs
+# (build-daemon-bundle.sh deploys with node-linker=hoisted). Assert that here so
+# a layout regression fails the gate, not the end user.
+WS_DEP="@open-design/sidecar-proto"
+WS_DIR="$NM/$WS_DEP"
+[[ -e "$WS_DIR" ]]  || die "workspace dep $WS_DEP missing from bundle ($WS_DIR) — deploy must use node-linker=hoisted"
+[[ ! -L "$WS_DIR" ]] || die "workspace dep $WS_DEP is a SYMLINK — Tauri's resource copy will drop it; deploy must use node-linker=hoisted"
+[[ -f "$WS_DIR/dist/index.mjs" ]] || die "workspace dep $WS_DEP has no dist/index.mjs (unbuilt or incomplete)"
+
 log "node:           $("$NODE_BIN" --version)  (abi $("$NODE_BIN" -p 'process.versions.modules'))"
 log "better-sqlite3: $BSQLITE_DIR"
 log "node-pty:       ${PTY_DIR:-<absent>}"

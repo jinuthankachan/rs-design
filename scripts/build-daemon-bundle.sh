@@ -37,8 +37,22 @@ log()  { printf '\033[1;34m[build-daemon]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[build-daemon] WARN:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[build-daemon] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-command -v pnpm >/dev/null || die "pnpm is required (build-only dependency)"
 [[ -d "$VENDOR" ]] || die "submodule not found at $VENDOR"
+
+# Resolve the pnpm version the submodule pins (packageManager). A newer
+# standalone pnpm on PATH refuses to run here (packageManager guard) AND silently
+# ignores the submodule's `pnpm.overrides`, so invoke the pinned version through
+# corepack regardless of what's on PATH. CI's `corepack enable` also works, but
+# this is robust on a dev box with a different global pnpm.
+PNPM_PIN="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([^"]*\)".*/\1/p' "$VENDOR/package.json" 2>/dev/null | head -1)"
+if command -v corepack >/dev/null 2>&1 && [[ -n "$PNPM_PIN" ]]; then
+  PNPM=(corepack "pnpm@$PNPM_PIN")
+elif command -v pnpm >/dev/null 2>&1; then
+  PNPM=(pnpm)
+else
+  die "pnpm is required (build-only dependency); install Node 24 (corepack) or pnpm"
+fi
+log "using pnpm: ${PNPM[*]} (submodule pins ${PNPM_PIN:-unknown})"
 
 DAEMON_DIST="$VENDOR/apps/daemon/dist/cli.js"
 WEB_OUT="$VENDOR/apps/web/out"
@@ -47,11 +61,11 @@ WEB_OUT="$VENDOR/apps/web/out"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   if [[ ! -f "$DAEMON_DIST" ]]; then
     log "building daemon (tsc)…"
-    ( cd "$VENDOR" && pnpm --filter @open-design/daemon build )
+    ( cd "$VENDOR" && "${PNPM[@]}" --filter @open-design/daemon build )
   fi
   if [[ ! -d "$WEB_OUT" ]]; then
     log "building web static export…"
-    ( cd "$VENDOR" && pnpm --filter @open-design/web build )
+    ( cd "$VENDOR" && "${PNPM[@]}" --filter @open-design/web build )
   fi
 fi
 [[ -f "$DAEMON_DIST" ]] || die "daemon not built ($DAEMON_DIST); run without SKIP_BUILD"
@@ -61,15 +75,29 @@ mkdir -p "$RUNTIME_DIR/apps"
 DAEMON_OUT="$RUNTIME_DIR/apps/daemon"
 
 # 2. pnpm deploy: self-contained {dist,bin,node_modules,package.json}. --legacy is
-#    required (pnpm v10 refuses non-injected workspace deploys). Per the spike.
+#    required (pnpm v10 refuses non-injected workspace deploys).
+#
+#    node-linker=hoisted is CRITICAL: the default isolated linker lays out
+#    node_modules as SYMLINKS into a .pnpm store (e.g. @open-design/sidecar-proto
+#    → ../.pnpm/…). Tauri's `bundle.resources` copier does NOT preserve symlinks,
+#    so the packaged app loses every workspace dep and the daemon dies with
+#    ERR_MODULE_NOT_FOUND '@open-design/sidecar-proto'. Hoisted emits real
+#    directories (the daemon's 8 @open-design/* workspace deps included), which
+#    survive the resource copy.
 if [[ "${SKIP_DEPLOY:-}" != "1" ]]; then
-  log "deploying pruned prod daemon → $DAEMON_OUT"
+  log "deploying pruned prod daemon (hoisted, symlink-free) → $DAEMON_OUT"
   rm -rf "$DAEMON_OUT"
-  # Run inside the submodule so the standalone pnpm honors its pinned version
-  # (packageManager: pnpm@10.33.2) instead of corepack picking a newer pnpm.
-  ( cd "$VENDOR" && pnpm --filter @open-design/daemon deploy --legacy --prod "$DAEMON_OUT" )
+  ( cd "$VENDOR" && "${PNPM[@]}" --filter @open-design/daemon deploy \
+      --legacy --prod --config.node-linker=hoisted "$DAEMON_OUT" )
 fi
 [[ -f "$DAEMON_OUT/dist/cli.js" ]] || die "deploy produced no dist/cli.js"
+# Guard: the workspace deps must be REAL dirs (not symlinks, not missing) or the
+# packaged daemon will fail to resolve them after Tauri's symlink-dropping copy.
+if [[ -L "$DAEMON_OUT/node_modules/@open-design/sidecar-proto" ]]; then
+  die "node_modules/@open-design is symlinked — hoisted deploy failed; the bundle would break under Tauri's resource copy"
+fi
+[[ -f "$DAEMON_OUT/node_modules/@open-design/sidecar-proto/dist/index.mjs" ]] \
+  || die "workspace dep @open-design/sidecar-proto missing from deploy"
 
 NM="$DAEMON_OUT/node_modules"
 
